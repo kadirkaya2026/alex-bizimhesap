@@ -1,0 +1,115 @@
+import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js";
+import { postAddInvoiceRaw } from "./client.js";
+import type { BizimhesapAddInvoicePayload } from "./types.js";
+
+function formatMoney(value: number): string {
+  return value.toFixed(2);
+}
+
+function computeLine(line: OrderDraftLine, defaultTaxRate: number) {
+  const taxRate = line.taxRate ?? defaultTaxRate;
+  const gross = line.qty * line.unitPrice;
+  const discount = 0;
+  const net = gross - discount;
+  const tax = (net * taxRate) / 100;
+  const total = net + tax;
+
+  return {
+    taxRate,
+    gross,
+    discount,
+    net,
+    tax,
+    total,
+  };
+}
+
+export function buildAddInvoicePayload(params: {
+  draft: OrderDraft;
+  firmId: string;
+  defaultTaxRate: number;
+  defaultDueDays: number;
+  defaultCurrency: string;
+  customerId?: string;
+  productIdByLine?: (line: OrderDraftLine, index: number) => string | undefined;
+}): BizimhesapAddInvoicePayload {
+  const { draft, firmId, defaultTaxRate, defaultDueDays, defaultCurrency } =
+    params;
+
+  const invoiceDate = draft.orderDate
+    ? new Date(draft.orderDate)
+    : new Date();
+  const dueDate = new Date(invoiceDate);
+  dueDate.setDate(dueDate.getDate() + defaultDueDays);
+
+  const toIso = (d: Date) => d.toISOString();
+
+  const details = draft.lines.map((line, index) => {
+    const calc = computeLine(line, defaultTaxRate);
+    const productId = params.productIdByLine?.(line, index);
+
+    return {
+      ...(productId ? { productId } : {}),
+      productName: line.name,
+      ...(line.sku ? { barcode: line.sku } : {}),
+      taxRate: formatMoney(calc.taxRate),
+      quantity: line.qty,
+      unitPrice: formatMoney(line.unitPrice),
+      grossPrice: formatMoney(calc.gross),
+      discount: formatMoney(calc.discount),
+      net: formatMoney(calc.net),
+      tax: formatMoney(calc.tax),
+      total: formatMoney(calc.total),
+    };
+  });
+
+  const grossTotal = details.reduce(
+    (sum, d) => sum + Number.parseFloat(d.grossPrice),
+    0,
+  );
+  const netTotal = details.reduce(
+    (sum, d) => sum + Number.parseFloat(d.net),
+    0,
+  );
+  const taxTotal = details.reduce(
+    (sum, d) => sum + Number.parseFloat(d.tax),
+    0,
+  );
+  const total = details.reduce(
+    (sum, d) => sum + Number.parseFloat(d.total),
+    0,
+  );
+
+  return {
+    firmId,
+    ...(draft.orderNumber ? { invoiceNo: draft.orderNumber } : {}),
+    invoiceType: 3,
+    ...(draft.paymentNote ? { note: draft.paymentNote } : {}),
+    dates: {
+      invoiceDate: toIso(invoiceDate),
+      dueDate: toIso(dueDate),
+      deliveryDate: toIso(invoiceDate),
+    },
+    customer: {
+      ...(params.customerId ? { customerId: params.customerId } : {}),
+      title: draft.customerName,
+      address: "-",
+    },
+    amounts: {
+      currency: defaultCurrency,
+      gross: formatMoney(grossTotal),
+      discount: formatMoney(0),
+      net: formatMoney(netTotal),
+      tax: formatMoney(taxTotal),
+      total: formatMoney(total),
+    },
+    details,
+  };
+}
+
+export async function postAddInvoice(
+  payload: BizimhesapAddInvoicePayload,
+  apiKey: string,
+) {
+  return postAddInvoiceRaw(payload, apiKey);
+}

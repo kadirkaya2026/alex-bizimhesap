@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id               String   @id @default(cuid())
+  name             String
+  bizimhesapFirmId String   @map("bizimhesap_firm_id")
+  bizimhesapApiKey String   @map("bizimhesap_api_key")
+  defaultTaxRate   Decimal  @default(20) @map("default_tax_rate") @db.Decimal(5, 2)
+  defaultDueDays   Int      @default(30) @map("default_due_days")
+  defaultCurrency  String   @default("TL") @map("default_currency")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  phones            AllowedPhone[]
+  mappingsCustomer  CustomerMapping[]
+  mappingsProduct   ProductMapping[]
+  conversations     Conversation[]
+  invoiceJobs       InvoiceJob[]
+  inboundLogs       InboundMessageLog[]
+
+  @@map("tenants")
+}
+
+model AllowedPhone {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  phoneE164 String   @unique @map("phone_e164")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("allowed_phones")
+}
+
+model Conversation {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  phoneE164   String   @map("phone_e164")
+  state       String   @default("idle")
+  contextJson Json?    @map("context_json")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phoneE164])
+  @@map("conversations")
+}
+
+model InvoiceJob {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  phoneE164      String    @map("phone_e164")
+  orderNumber    String?   @map("order_number")
+  draftJson      Json      @map("draft_json")
+  draftHash      String    @map("draft_hash")
+  status         String    @default("draft")
+  bizimhesapGuid String?   @map("bizimhesap_guid")
+  bizimhesapUrl  String?   @map("bizimhesap_url")
+  errorMessage   String?   @map("error_message")
+  whatsappMsgId  String?   @map("whatsapp_msg_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  postedAt       DateTime? @map("posted_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, status])
+  @@map("invoice_jobs")
+}
+
+model CustomerMapping {
+  id                   String   @id @default(cuid())
+  tenantId             String   @map("tenant_id")
+  localName            String   @map("local_name")
+  bizimhesapCustomerId String?  @map("bizimhesap_customer_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, localName])
+  @@map("customer_mappings")
+}
+
+model ProductMapping {
+  id                 String   @id @default(cuid())
+  tenantId           String   @map("tenant_id")
+  localSku           String?  @map("local_sku")
+  localName          String   @map("local_name")
+  bizimhesapProductId String? @map("bizimhesap_product_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, localName])
+  @@map("product_mappings")
+}
+
+model InboundMessageLog {
+  id            String   @id @default(cuid())
+  tenantId      String?  @map("tenant_id")
+  phoneE164     String   @map("phone_e164")
+  messageType   String   @map("message_type")
+  payloadJson   Json     @map("payload_json")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([phoneE164, createdAt])
+  @@map("inbound_message_logs")
+}
