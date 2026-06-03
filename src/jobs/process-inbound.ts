@@ -37,11 +37,19 @@ async function processSingleMessage(message: InboundMessage): Promise<void> {
 
     await handleInboundMessage(tenant, message);
   } catch (error) {
+    const msg = getErrorMessage(error);
     logger.error({ error, phoneE164 }, "Inbound message processing failed");
+    if (msg.includes("401")) {
+      logger.error(
+        "WhatsApp 401: Railway accurate-analysis → WHATSAPP_ACCESS_TOKEN güncelleyin → npm run railway:import-secrets → redeploy",
+      );
+    }
     try {
       await sendWhatsAppText(
         phoneE164,
-        `Bir hata oluştu: ${getErrorMessage(error)}`,
+        msg.includes("401")
+          ? "WhatsApp yapılandırma hatası — yönetici token'ı güncellemeli. Kısa süre sonra tekrar deneyin."
+          : `Bir hata oluştu: ${msg}`,
       );
     } catch {
       // ignore secondary failure

@@ -4,6 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SERVICE="${RAILWAY_SERVICE:-alex-bizimhesap}"
+PROJECT="${RAILWAY_PROJECT_ID:-a3b3d0fa-b151-4ca9-a6d2-327ad9d4a5b1}"
+ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
+RAILWAY_PROJECT_ARGS=(-p "$PROJECT" -e "$ENVIRONMENT")
 
 FIRM_ID="${1:-}"
 API_KEY="${2:-}"
@@ -18,8 +21,8 @@ if ! railway whoami >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Bizimhesap variables ($SERVICE)"
-railway variable set --service "$SERVICE" \
+echo "==> Bizimhesap variables project=$PROJECT service=$SERVICE"
+railway variable set "${RAILWAY_PROJECT_ARGS[@]}" --service "$SERVICE" \
   "BIZIMHESAP_FIRM_ID=$FIRM_ID" \
   "BIZIMHESAP_API_KEY=$API_KEY"
 

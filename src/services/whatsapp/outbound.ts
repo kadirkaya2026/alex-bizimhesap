@@ -30,6 +30,11 @@ export async function sendWhatsAppText(
   if (!response.ok) {
     const text = await response.text();
     logger.error({ status: response.status, text }, "WhatsApp send failed");
+    if (response.status === 401) {
+      throw new Error(
+        "WhatsApp gönderim hatası: 401 — WHATSAPP_ACCESS_TOKEN geçersiz veya süresi dolmuş",
+      );
+    }
     throw new Error(`WhatsApp gönderim hatası: ${response.status}`);
   }
 }

@@ -15,6 +15,7 @@
     "railway:setup": "bash scripts/railway-setup.sh",
     "railway:allow-phone": "bash scripts/railway-allow-phone.sh",
     "verify:prod": "bash scripts/verify-production.sh",
+    "verify:whatsapp": "node scripts/verify-whatsapp-token.mjs",
     "logs:pull": "bash scripts/pull-railway-logs.sh",
     "railway:import-secrets": "bash scripts/railway-import-secrets.sh",
     "railway:fix-db": "bash scripts/railway-fix-database.sh",
