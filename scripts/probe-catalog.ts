@@ -13,8 +13,13 @@ import {
 } from "../src/services/matching/catalog.js";
 
 const apiKey = process.env.BIZIMHESAP_API_KEY?.trim();
+const firmId = process.env.BIZIMHESAP_FIRM_ID?.trim();
 if (!apiKey || apiKey === "REPLACE_API_KEY") {
   console.error("BIZIMHESAP_API_KEY gerekli.");
+  process.exit(1);
+}
+if (!firmId || firmId === "REPLACE_FIRM_ID") {
+  console.error("BIZIMHESAP_FIRM_ID gerekli.");
   process.exit(1);
 }
 
@@ -33,8 +38,8 @@ function sampleFields(label: string, raw: Record<string, unknown>[]) {
   }
 }
 
-const rawCustomers = await listCustomers(apiKey);
-const rawProducts = await listProducts(apiKey);
+const rawCustomers = await listCustomers(firmId, apiKey);
+const rawProducts = await listProducts(firmId, apiKey);
 
 sampleFields("Customers", rawCustomers);
 sampleFields("Products", rawProducts);

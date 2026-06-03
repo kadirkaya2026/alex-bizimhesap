@@ -17,8 +17,13 @@ import { normalizeCode } from "../src/services/matching/score.js";
 const prisma = new PrismaClient();
 
 const apiKey = process.env.BIZIMHESAP_API_KEY?.trim();
+const firmId = process.env.BIZIMHESAP_FIRM_ID?.trim();
 if (!apiKey || apiKey === "REPLACE_API_KEY") {
   console.error("BIZIMHESAP_API_KEY .env içinde gerekli.");
+  process.exit(1);
+}
+if (!firmId || firmId === "REPLACE_FIRM_ID") {
+  console.error("BIZIMHESAP_FIRM_ID .env içinde gerekli.");
   process.exit(1);
 }
 
@@ -30,8 +35,8 @@ if (!tenant) {
 
 console.log(`Tenant: ${tenant.name} (${tenant.id})`);
 
-const rawCustomers = await listCustomers(apiKey);
-const rawProducts = await listProducts(apiKey);
+const rawCustomers = await listCustomers(firmId, apiKey);
+const rawProducts = await listProducts(firmId, apiKey);
 
 let customerCount = 0;
 for (const row of rawCustomers) {

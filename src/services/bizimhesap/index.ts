@@ -1,4 +1,5 @@
-export { bizimhesapGet, bizimhesapPost, postAddInvoiceRaw } from "./client.js";
+export { bizimhesapGet, bizimhesapGetList, bizimhesapPost, postAddInvoiceRaw } from "./client.js";
+export type { BizimhesapGetAuth } from "./client.js";
 export {
   buildCancelInvoicePayload,
   postCancelInvoice,

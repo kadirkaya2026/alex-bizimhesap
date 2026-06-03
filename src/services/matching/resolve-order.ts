@@ -3,7 +3,7 @@ import { logger } from "../../lib/logger.js";
 import { getWarehouseInventory, listWarehouses } from "../bizimhesap/products.js";
 import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js";
 import type { ResolvedTenant } from "../tenant/resolve.js";
-import { CatalogCache, extractInventoryStock } from "./catalog.js";
+import { CatalogCache, extractInventoryStock, type CatalogStats } from "./catalog.js";
 import type { ResolvedCustomer } from "./customer.js";
 import { resolveCustomerMapping } from "./customer.js";
 import type { ResolvedProductLine } from "./product.js";
@@ -45,6 +45,7 @@ export interface ResolvedOrder {
   customerSuggestion?: CustomerSuggestion;
   productSuggestions: ProductSuggestion[];
   manualOverrides?: ManualOverrides;
+  catalogStats?: CatalogStats;
 }
 
 export interface ResolvedOrderSnapshot {
@@ -117,7 +118,10 @@ async function resolveWarehouseId(
   }
 
   try {
-    const warehouses = await listWarehouses(tenant.bizimhesapApiKey);
+    const warehouses = await listWarehouses(
+      tenant.bizimhesapFirmId,
+      tenant.bizimhesapApiKey,
+    );
     const first = warehouses[0];
     if (!first) {
       logger.warn("Bizimhesap depo listesi boş — stok kontrolü atlandı");
@@ -150,6 +154,7 @@ async function checkStockWarnings(
   try {
     inventory = await getWarehouseInventory(
       warehouse.warehouseId,
+      tenant.bizimhesapFirmId,
       tenant.bizimhesapApiKey,
     );
   } catch (error) {
@@ -195,13 +200,28 @@ export async function resolveOrderMappings(
   },
 ): Promise<ResolvedOrder> {
   let cache: CatalogCache | undefined;
+  let catalogStats: CatalogStats | undefined;
   if (options?.catalog) {
     cache = options.catalog;
   } else if (
     tenant.bizimhesapApiKey &&
-    tenant.bizimhesapApiKey !== "REPLACE_API_KEY"
+    tenant.bizimhesapApiKey !== "REPLACE_API_KEY" &&
+    tenant.bizimhesapFirmId &&
+    tenant.bizimhesapFirmId !== "REPLACE_FIRM_ID"
   ) {
-    cache = new CatalogCache(tenant.bizimhesapApiKey);
+    cache = new CatalogCache(tenant.bizimhesapFirmId, tenant.bizimhesapApiKey);
+  }
+
+  if (cache) {
+    try {
+      await cache.getCustomers();
+      await cache.getProducts();
+      catalogStats = cache.getStats();
+      logger.info({ catalogStats }, "Bizimhesap katalog yüklendi");
+    } catch (error) {
+      logger.warn({ error }, "Bizimhesap katalog yüklenemedi");
+      cache = undefined;
+    }
   }
 
   const overrides = options?.manualOverrides;
@@ -269,6 +289,7 @@ export async function resolveOrderMappings(
     customerSuggestion,
     productSuggestions,
     manualOverrides: overrides,
+    catalogStats,
   };
 }
 

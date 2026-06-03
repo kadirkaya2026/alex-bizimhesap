@@ -2,6 +2,11 @@ import { getEnv } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import type { BizimhesapAddInvoiceResponse } from "./types.js";
 
+export interface BizimhesapGetAuth {
+  firmId: string;
+  apiKey: string;
+}
+
 function resolveUrl(path: string): string {
   const baseUrl = getEnv().BIZIMHESAP_BASE_URL.replace(/\/$/, "");
   return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
@@ -27,6 +32,12 @@ export function normalizeListResponse(data: unknown): Record<string, unknown>[] 
       if (Array.isArray(nested)) {
         return nested as Record<string, unknown>[];
       }
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        const inner = normalizeListResponse(nested);
+        if (inner.length > 0) {
+          return inner;
+        }
+      }
     }
   }
   return [];
@@ -42,24 +53,47 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   }
 }
 
-/** GET uçları: `token` header (Products, Customers, Warehouses, Inventory, Abstract). */
-export async function bizimhesapGet<T>(path: string, apiKey: string): Promise<T> {
+/** GET uçları: `Key` (FirmID) + `token` header (Products, Customers, Warehouses, Inventory). */
+export async function bizimhesapGet<T>(
+  path: string,
+  auth: BizimhesapGetAuth,
+): Promise<T> {
   const response = await fetch(resolveUrl(path), {
     method: "GET",
     headers: {
       Accept: "application/json",
-      token: apiKey,
+      Key: auth.firmId,
+      token: auth.apiKey,
     },
   });
 
   const data = await parseJsonResponse<T>(response);
 
   if (!response.ok) {
-    logger.error({ status: response.status, data }, "Bizimhesap GET HTTP error");
+    logger.error({ status: response.status, data, path }, "Bizimhesap GET HTTP error");
     throw new Error(`Bizimhesap HTTP ${response.status}`);
   }
 
   return data;
+}
+
+export async function bizimhesapGetList(
+  path: string,
+  auth: BizimhesapGetAuth,
+): Promise<Record<string, unknown>[]> {
+  const data = await bizimhesapGet<unknown>(path, auth);
+  const items = normalizeListResponse(data);
+  if (items.length === 0) {
+    logger.warn(
+      {
+        path,
+        firmIdSuffix: auth.firmId.slice(-4),
+        responseType: Array.isArray(data) ? "array" : typeof data,
+      },
+      "Bizimhesap GET boş liste döndü — Key/token veya yanıt formatını kontrol edin",
+    );
+  }
+  return items;
 }
 
 /**

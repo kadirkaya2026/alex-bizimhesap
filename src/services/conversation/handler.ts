@@ -140,6 +140,7 @@ async function sendPreviewForJob(
       blockingErrors: resolved.blockingErrors,
       customerSuggestion: resolved.customerSuggestion,
       productSuggestions: resolved.productSuggestions,
+      catalogStats: resolved.catalogStats,
     }),
   );
 
@@ -324,6 +325,7 @@ async function handleConfirm(tenant: ResolvedTenant) {
         blockingErrors: resolved.blockingErrors,
         customerSuggestion: resolved.customerSuggestion,
         productSuggestions: resolved.productSuggestions,
+        catalogStats: resolved.catalogStats,
       }),
     );
     return;

@@ -24,13 +24,13 @@ Varsayılan endpoint: `https://bizimhesap.com/api/b2b` (`BIZIMHESAP_BASE_URL`).
 | CancelInvoice | `POST /cancelinvoice` | `postCancelInvoice` |
 | AddCustomer | `POST /addcustomer` | `postAddCustomer` |
 | AddProduct | `POST /addproduct` | `postAddProduct` |
-| Products | `GET /products` | `listProducts` — `token` header |
+| Products | `GET /products` | `listProducts` — `Key` + `token` header |
 | Warehouses | `GET /warehouses` | `listWarehouses` |
 | Inventory | `GET /inventory/{depo-id}` | `getWarehouseInventory` |
 | Customers | `GET /customers` | `listCustomers` |
 | Abstract | `GET /abstract/{musteri-id}` | `getCustomerAbstract` |
 
-POST fatura uçları `firmId` ile body'de gider; GET uçları `BIZIMHESAP_API_KEY` değerini `token` header'ında kullanır.
+POST fatura uçları `firmId` ile body'de gider; GET uçları `BIZIMHESAP_FIRM_ID` → `Key` ve `BIZIMHESAP_API_KEY` → `token` header'ında kullanılır.
 
 ## 2. Railway (production)
 
@@ -98,9 +98,15 @@ Stok uyarısı (engelleme yok):
 
 ### İlk kurulum — kataloğu tabloya aktar
 
+Production'da catalog sync **her deploy'da otomatik** çalışır (`scripts/sync-catalog-production.mjs`).
+
+Yerel geliştirme için:
+
 ```bash
 npm run sync:catalog-mappings
 ```
+
+**Önemli:** `railway run npm run sync:catalog-mappings` komutu **Mac'inizde** çalışır; `postgres.railway.internal` hostname'i yerel makineden çözülmez. Production DB'ye sync için redeploy yapın veya `railway ssh` ile container içinde çalıştırın.
 
 Bu komut Bizimhesap'taki tüm cari/ürünleri mapping tablolarına yazar. PDF'deki isimler farklıysa manuel düzeltme gerekebilir.
 

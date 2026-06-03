@@ -17,16 +17,28 @@ async function getMappingStats() {
 
   let catalogCustomersParsed: number | null = null;
   let catalogProductsParsed: number | null = null;
+  let catalogCustomersRaw: number | null = null;
+  let catalogProductsRaw: number | null = null;
 
-  const apiKey = getEnv().BIZIMHESAP_API_KEY?.trim();
-  if (apiKey && apiKey !== "REPLACE_API_KEY" && isBizimhesapConfigured()) {
+  const env = getEnv();
+  const firmId = env.BIZIMHESAP_FIRM_ID?.trim();
+  const apiKey = env.BIZIMHESAP_API_KEY?.trim();
+  if (
+    firmId &&
+    firmId !== "REPLACE_FIRM_ID" &&
+    apiKey &&
+    apiKey !== "REPLACE_API_KEY" &&
+    isBizimhesapConfigured()
+  ) {
     try {
-      const cache = new CatalogCache(apiKey);
+      const cache = new CatalogCache(firmId, apiKey);
       await cache.getCustomers();
       await cache.getProducts();
       const stats = cache.getStats();
       catalogCustomersParsed = stats.parsedCustomers;
       catalogProductsParsed = stats.parsedProducts;
+      catalogCustomersRaw = stats.rawCustomerCount;
+      catalogProductsRaw = stats.rawProductCount;
     } catch {
       // catalog probe optional on health
     }
@@ -37,6 +49,8 @@ async function getMappingStats() {
     products,
     catalogCustomersParsed,
     catalogProductsParsed,
+    catalogCustomersRaw,
+    catalogProductsRaw,
   };
 }
 

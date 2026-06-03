@@ -81,7 +81,26 @@ export async function applyMappingCommand(
   command: MappingCommand,
   existingOverrides?: ManualOverrides,
 ): Promise<{ overrides: ManualOverrides; message: string } | { error: string }> {
-  const cache = new CatalogCache(tenant.bizimhesapApiKey);
+  const cache = new CatalogCache(tenant.bizimhesapFirmId, tenant.bizimhesapApiKey);
+
+  try {
+    await cache.getCustomers();
+    await cache.getProducts();
+  } catch {
+    return {
+      error:
+        "Bizimhesap kataloğu yüklenemedi — API/auth kontrol edilmeli.",
+    };
+  }
+
+  const stats = cache.getStats();
+  if (stats.parsedCustomers === 0 && stats.parsedProducts === 0) {
+    return {
+      error:
+        "Bizimhesap kataloğu boş — CARI:6761 yazsanız bile liste yüklenemedi. Önce API/auth düzeltilmeli.",
+    };
+  }
+
   const overrides: ManualOverrides = {
     customerId: existingOverrides?.customerId,
     productIdsByLine: { ...existingOverrides?.productIdsByLine },

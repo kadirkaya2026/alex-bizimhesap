@@ -1,16 +1,15 @@
-import { bizimhesapGet, bizimhesapPost, normalizeListResponse } from "./client.js";
+import { bizimhesapGetList, bizimhesapPost } from "./client.js";
 import type {
-  BizimhesapAbstractRecord,
   BizimhesapAddCustomerPayload,
   BizimhesapCustomerRecord,
   BizimhesapMutationResponse,
 } from "./types.js";
 
 export async function listCustomers(
+  firmId: string,
   apiKey: string,
 ): Promise<BizimhesapCustomerRecord[]> {
-  const data = await bizimhesapGet<unknown>("/customers", apiKey);
-  return normalizeListResponse(data);
+  return bizimhesapGetList("/customers", { firmId, apiKey });
 }
 
 export async function postAddCustomer(
@@ -26,9 +25,9 @@ export async function postAddCustomer(
 
 export async function getCustomerAbstract(
   customerId: string,
+  firmId: string,
   apiKey: string,
-): Promise<BizimhesapAbstractRecord[]> {
+): Promise<BizimhesapCustomerRecord[]> {
   const encodedId = encodeURIComponent(customerId);
-  const data = await bizimhesapGet<unknown>(`/abstract/${encodedId}`, apiKey);
-  return normalizeListResponse(data);
+  return bizimhesapGetList(`/abstract/${encodedId}`, { firmId, apiKey });
 }

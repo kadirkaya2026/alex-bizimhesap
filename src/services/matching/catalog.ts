@@ -1,5 +1,6 @@
 import { listCustomers } from "../bizimhesap/customers.js";
 import { listProducts } from "../bizimhesap/products.js";
+import { logger } from "../../lib/logger.js";
 import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js";
 import { extractLineCodeCandidates } from "./extract-codes.js";
 import { normalizeMatchText, pickNumber, pickString } from "./normalize.js";
@@ -106,6 +107,26 @@ export function recordFieldNames(record: Record<string, unknown>): string[] {
   return Object.keys(record);
 }
 
+export interface CatalogStats {
+  rawCustomerCount: number;
+  rawProductCount: number;
+  parsedCustomers: number;
+  parsedProducts: number;
+}
+
+function pickFirstStringField(
+  record: Record<string, unknown>,
+  predicate: (key: string) => boolean,
+): string | undefined {
+  for (const [key, val] of Object.entries(record)) {
+    if (!predicate(key)) continue;
+    if (val != null && String(val).trim()) {
+      return String(val).trim();
+    }
+  }
+  return undefined;
+}
+
 export class CatalogCache {
   private customers: CatalogCustomer[] | null = null;
   private products: CatalogProduct[] | null = null;
@@ -113,9 +134,12 @@ export class CatalogCache {
   private rawCustomerCount = 0;
   private rawProductCount = 0;
 
-  constructor(private readonly apiKey: string) {}
+  constructor(
+    private readonly firmId: string,
+    private readonly apiKey: string,
+  ) {}
 
-  getStats() {
+  getStats(): CatalogStats {
     return {
       rawCustomerCount: this.rawCustomerCount,
       rawProductCount: this.rawProductCount,
@@ -124,24 +148,41 @@ export class CatalogCache {
     };
   }
 
+  isEmpty(): boolean {
+    const stats = this.getStats();
+    return stats.parsedCustomers === 0 && stats.parsedProducts === 0;
+  }
+
   async getCustomers(): Promise<CatalogCustomer[]> {
     if (!this.customers) {
-      const raw = await listCustomers(this.apiKey);
+      const raw = await listCustomers(this.firmId, this.apiKey);
       this.rawCustomerCount = raw.length;
       this.customers = raw
         .map(normalizeCustomerRecord)
         .filter((c): c is CatalogCustomer => Boolean(c));
+      if (raw.length > 0 && this.customers.length === 0) {
+        logger.warn(
+          { rawCount: raw.length, sampleFields: recordFieldNames(raw[0]!) },
+          "Bizimhesap cari kayıtları parse edilemedi — alan adlarını kontrol edin",
+        );
+      }
     }
     return this.customers;
   }
 
   async getProducts(): Promise<CatalogProduct[]> {
     if (!this.products) {
-      const raw = await listProducts(this.apiKey);
+      const raw = await listProducts(this.firmId, this.apiKey);
       this.rawProductCount = raw.length;
       this.products = raw
         .map(normalizeProductRecord)
         .filter((p): p is CatalogProduct => Boolean(p));
+      if (raw.length > 0 && this.products.length === 0) {
+        logger.warn(
+          { rawCount: raw.length, sampleFields: recordFieldNames(raw[0]!) },
+          "Bizimhesap ürün kayıtları parse edilemedi — alan adlarını kontrol edin",
+        );
+      }
       this.buildCodeIndex();
     }
     return this.products;
@@ -173,8 +214,21 @@ export class CatalogCache {
 export function normalizeCustomerRecord(
   record: Record<string, unknown>,
 ): CatalogCustomer | null {
-  const id = pickString(record, CUSTOMER_ID_KEYS);
-  const title = pickString(record, TITLE_KEYS);
+  let id = pickString(record, CUSTOMER_ID_KEYS);
+  let title = pickString(record, TITLE_KEYS);
+
+  if (!id) {
+    id = pickFirstStringField(
+      record,
+      (k) => /(?:^|[A-Z])id$/i.test(k) || /^guid$/i.test(k),
+    );
+  }
+  if (!title) {
+    title = pickFirstStringField(record, (k) =>
+      /title|name|unvan|firma|company|musteri/i.test(k),
+    );
+  }
+
   if (!id || !title) return null;
   return {
     id,
@@ -187,8 +241,21 @@ export function normalizeCustomerRecord(
 export function normalizeProductRecord(
   record: Record<string, unknown>,
 ): CatalogProduct | null {
-  const id = pickString(record, PRODUCT_ID_KEYS);
-  const title = pickString(record, TITLE_KEYS);
+  let id = pickString(record, PRODUCT_ID_KEYS);
+  let title = pickString(record, TITLE_KEYS);
+
+  if (!id) {
+    id = pickFirstStringField(
+      record,
+      (k) => /(?:^|[A-Z])id$/i.test(k) || /^guid$/i.test(k),
+    );
+  }
+  if (!title) {
+    title = pickFirstStringField(record, (k) =>
+      /title|name|unvan|stok|product|urun/i.test(k),
+    );
+  }
+
   if (!id || !title) return null;
   return {
     id,

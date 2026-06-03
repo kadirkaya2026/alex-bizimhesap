@@ -1,6 +1,7 @@
 import { getEnv, isWhatsAppConfigured } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import type { ResolvedCustomer } from "../matching/customer.js";
+import type { CatalogStats } from "../matching/catalog.js";
 import type { ResolvedLine, StockWarning } from "../matching/resolve-order.js";
 import type {
   CustomerSuggestion,
@@ -56,6 +57,7 @@ export function formatPreviewMessage(params: {
   blockingErrors?: string[];
   customerSuggestion?: CustomerSuggestion;
   productSuggestions?: ProductSuggestion[];
+  catalogStats?: CatalogStats;
 }): string {
   const output: string[] = ["Sipariş özeti"];
 
@@ -117,6 +119,17 @@ export function formatPreviewMessage(params: {
 
   output.push(`Toplam: ${params.total} (KDV dahil)`);
 
+  const catalogEmpty =
+    params.catalogStats &&
+    params.catalogStats.parsedCustomers === 0 &&
+    params.catalogStats.parsedProducts === 0;
+  if (catalogEmpty) {
+    output.push(
+      "",
+      "⚠ Bizimhesap kataloğu yüklenemedi (0 cari, 0 ürün). Yönetici sync/catalog kontrol etmeli.",
+    );
+  }
+
   const blocking = params.blockingErrors ?? [];
   if (blocking.length > 0) {
     output.push("", "Eşleşmeyen:");
@@ -143,6 +156,7 @@ export function formatBlockingErrorsMessage(params: {
   blockingErrors: string[];
   customerSuggestion?: CustomerSuggestion;
   productSuggestions?: ProductSuggestion[];
+  catalogStats?: CatalogStats;
 }): string {
   const lines = [
     "Fişleme yapılamadı — eşleşmeyen kalemler:",
@@ -161,6 +175,23 @@ export function formatBlockingErrorsMessage(params: {
     const s = ps.suggestion;
     lines.push(
       `Satır ${ps.lineIndex + 1} öneri: ${s.label} (#${s.id}) — ${s.commandHint}`,
+    );
+  }
+
+  const hasSuggestions =
+    Boolean(params.customerSuggestion) ||
+    (params.productSuggestions?.length ?? 0) > 0;
+  const catalogEmpty =
+    params.catalogStats &&
+    params.catalogStats.parsedCustomers === 0 &&
+    params.catalogStats.parsedProducts === 0;
+
+  if (!hasSuggestions) {
+    lines.push(
+      "",
+      catalogEmpty
+        ? "Öneri yok — Bizimhesap kataloğu boş. Yönetici API/auth ve sync/catalog kontrol etmeli."
+        : "Öneri yok — CARI: ve SKU: için ID/kodu bilmiyorsanız önce npm run probe:catalog veya Bizimhesap panelden kontrol edin.",
     );
   }
 
