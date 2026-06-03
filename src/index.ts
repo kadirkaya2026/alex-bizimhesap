@@ -1,5 +1,5 @@
 import express from "express";
-import { getEnv } from "./config/env.js";
+import { assertBizimhesapConfigForProduction, getEnv } from "./config/env.js";
 import { logger } from "./lib/logger.js";
 import { healthRouter } from "./routes/health.js";
 import { whatsappWebhookRouter } from "./routes/webhooks/whatsapp.js";
@@ -17,6 +17,7 @@ app.use((_req, res) => {
 });
 
 const env = getEnv();
+assertBizimhesapConfigForProduction();
 const port = env.PORT;
 
 const server = app.listen(port, () => {

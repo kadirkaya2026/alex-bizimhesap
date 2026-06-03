@@ -40,10 +40,12 @@ Health: http://localhost:3000/health
 | `npm run db:migrate` | Prisma migrate deploy |
 | `npm run db:seed` | Pilot tenant + telefon allowlist |
 | `npm run test:addinvoice` | Bizimhesap manuel smoke test |
+| `npm run railway:bizimhesap` | Railway’e FirmID + API key yazar |
 
 ## Dokümantasyon
 
 - [Ön koşullar (Faz 0)](docs/PREREQUISITES.md)
+- [Bizimhesap API bağlama](docs/BIZIMHESAP_SETUP.md)
 - [Railway deploy](docs/DEPLOYMENT.md)
 - [Pilot test checklist](docs/PILOT_CHECKLIST.md)
 

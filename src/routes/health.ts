@@ -18,6 +18,12 @@ healthRouter.get("/health", async (_req, res) => {
       configured: isBizimhesapConfigured(),
       firmIdLength: firmId.length,
       firmIdSuffix: firmId.length >= 4 ? firmId.slice(-4) : null,
+      invalidPlaceholder:
+        firmId === "REPLACE_FIRM_ID" || firmId.length === 0,
+    },
+    railway: {
+      projectId: process.env.RAILWAY_PROJECT_ID ?? null,
+      serviceName: process.env.RAILWAY_SERVICE_NAME ?? null,
     },
   });
 });

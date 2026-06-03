@@ -2,7 +2,7 @@
 # Production smoke checks (plan: Railway log yorumu)
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://alex-bizimhesap-production.up.railway.app}"
+BASE_URL="${BASE_URL:-https://alex-bizimhesap-production-c144.up.railway.app}"
 PASS=0
 FAIL=0
 

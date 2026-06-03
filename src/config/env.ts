@@ -59,5 +59,37 @@ export function isOpenAiConfigured(): boolean {
 
 export function isBizimhesapConfigured(): boolean {
   const env = getEnv();
-  return Boolean(env.BIZIMHESAP_FIRM_ID && env.BIZIMHESAP_API_KEY);
+  const firmId = env.BIZIMHESAP_FIRM_ID?.trim();
+  const apiKey = env.BIZIMHESAP_API_KEY?.trim();
+  return Boolean(
+    firmId &&
+      apiKey &&
+      firmId !== "REPLACE_FIRM_ID" &&
+      apiKey !== "REPLACE_API_KEY",
+  );
+}
+
+/** Production'da geçersiz FirmID ile ayağa kalkmayı engeller. */
+export function assertBizimhesapConfigForProduction(): void {
+  const env = getEnv();
+  if (env.NODE_ENV !== "production") return;
+
+  const firmId = env.BIZIMHESAP_FIRM_ID?.trim() ?? "";
+  const apiKey = env.BIZIMHESAP_API_KEY?.trim() ?? "";
+
+  if (!firmId || firmId === "REPLACE_FIRM_ID") {
+    throw new Error(
+      "BIZIMHESAP_FIRM_ID eksik veya REPLACE_FIRM_ID — Railway Variables kontrol edin (webhook projesi: accurate-analysis).",
+    );
+  }
+  if (!apiKey || apiKey === "REPLACE_API_KEY") {
+    throw new Error(
+      "BIZIMHESAP_API_KEY eksik veya REPLACE_API_KEY — Railway Variables kontrol edin.",
+    );
+  }
+  if (firmId.length < 32) {
+    throw new Error(
+      `BIZIMHESAP_FIRM_ID geçersiz uzunluk (${firmId.length}) — Bizimhesap panelinden FirmID girin.`,
+    );
+  }
 }

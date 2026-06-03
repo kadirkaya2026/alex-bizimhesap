@@ -14,7 +14,12 @@
     "test:addinvoice": "tsx scripts/test-addinvoice.ts",
     "railway:setup": "bash scripts/railway-setup.sh",
     "railway:allow-phone": "bash scripts/railway-allow-phone.sh",
-    "verify:prod": "bash scripts/verify-production.sh"
+    "verify:prod": "bash scripts/verify-production.sh",
+    "logs:pull": "bash scripts/pull-railway-logs.sh",
+    "railway:import-secrets": "bash scripts/railway-import-secrets.sh",
+    "railway:fix-db": "bash scripts/railway-fix-database.sh",
+    "railway:bizimhesap": "bash scripts/railway-bizimhesap.sh",
+    "railway:sync-accurate": "bash scripts/railway-sync-accurate.sh"
   },
   "engines": {
     "node": ">=20"
