@@ -1,17 +1,28 @@
 import { getEnv } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import { getWarehouseInventory, listWarehouses } from "../bizimhesap/products.js";
-import type { OrderDraftLine } from "../parser/order-draft.schema.js";
+import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js";
 import type { ResolvedTenant } from "../tenant/resolve.js";
 import { CatalogCache, extractInventoryStock } from "./catalog.js";
 import type { ResolvedCustomer } from "./customer.js";
 import { resolveCustomerMapping } from "./customer.js";
 import type { ResolvedProductLine } from "./product.js";
 import { resolveProductLine } from "./product.js";
+import type {
+  CustomerSuggestion,
+  ManualOverrides,
+  ProductSuggestion,
+} from "./types.js";
 
 export type { MatchSource } from "./customer.js";
 export type { ResolvedCustomer } from "./customer.js";
 export type { ResolvedProductLine } from "./product.js";
+export type {
+  CustomerSuggestion,
+  ManualOverrides,
+  MatchSuggestion,
+  ProductSuggestion,
+} from "./types.js";
 
 export interface StockWarning {
   productName: string;
@@ -27,10 +38,13 @@ export interface ResolvedLine extends ResolvedProductLine {
 }
 
 export interface ResolvedOrder {
-  customer: Awaited<ReturnType<typeof resolveCustomerMapping>>;
+  customer: ResolvedCustomer;
   lines: ResolvedLine[];
   stockWarnings: StockWarning[];
   blockingErrors: string[];
+  customerSuggestion?: CustomerSuggestion;
+  productSuggestions: ProductSuggestion[];
+  manualOverrides?: ManualOverrides;
 }
 
 export interface ResolvedOrderSnapshot {
@@ -38,10 +52,13 @@ export interface ResolvedOrderSnapshot {
   lines: ResolvedLine[];
   stockWarnings: StockWarning[];
   blockingErrors: string[];
+  customerSuggestion?: CustomerSuggestion;
+  productSuggestions: ProductSuggestion[];
+  manualOverrides?: ManualOverrides;
 }
 
 function buildBlockingErrors(
-  customer: ResolvedOrder["customer"],
+  customer: ResolvedCustomer,
   lines: ResolvedLine[],
 ): string[] {
   const errors: string[] = [];
@@ -55,6 +72,37 @@ function buildBlockingErrors(
     }
   }
   return errors;
+}
+
+function collectSuggestions(
+  customer: ResolvedCustomer,
+  lines: ResolvedLine[],
+): {
+  customerSuggestion?: CustomerSuggestion;
+  productSuggestions: ProductSuggestion[];
+} {
+  const productSuggestions: ProductSuggestion[] = [];
+
+  for (const line of lines) {
+    if (!line.productId && line.suggestion) {
+      productSuggestions.push({
+        lineIndex: line.index,
+        pdfName: line.name,
+        sku: line.sku,
+        suggestion: line.suggestion,
+      });
+    }
+  }
+
+  const customerSuggestion =
+    !customer.customerId && customer.suggestion
+      ? {
+          pdfName: customer.title,
+          suggestion: customer.suggestion,
+        }
+      : undefined;
+
+  return { customerSuggestion, productSuggestions };
 }
 
 async function resolveWarehouseId(
@@ -80,7 +128,10 @@ async function resolveWarehouseId(
     ).trim();
     const name = String(first.title ?? first.name ?? first.Title ?? "").trim();
     if (!id) return null;
-    logger.warn({ warehouseId: id, warehouseName: name }, "Varsayılan depo otomatik seçildi — BIZIMHESAP_DEFAULT_WAREHOUSE_ID ayarlayın");
+    logger.warn(
+      { warehouseId: id, warehouseName: name },
+      "Varsayılan depo otomatik seçildi — BIZIMHESAP_DEFAULT_WAREHOUSE_ID ayarlayın",
+    );
     return { warehouseId: id, warehouseName: name || undefined };
   } catch (error) {
     logger.warn({ error }, "Depo listesi alınamadı — stok kontrolü atlandı");
@@ -102,7 +153,10 @@ async function checkStockWarnings(
       tenant.bizimhesapApiKey,
     );
   } catch (error) {
-    logger.warn({ error, warehouseId: warehouse.warehouseId }, "Depo stok verisi alınamadı");
+    logger.warn(
+      { error, warehouseId: warehouse.warehouseId },
+      "Depo stok verisi alınamadı",
+    );
     return [];
   }
 
@@ -134,12 +188,15 @@ async function checkStockWarnings(
 
 export async function resolveOrderMappings(
   tenant: ResolvedTenant,
-  draft: { lines: OrderDraftLine[]; customerName: string; taxNo?: string | null },
-  catalog?: CatalogCache,
+  draft: OrderDraft,
+  options?: {
+    catalog?: CatalogCache;
+    manualOverrides?: ManualOverrides;
+  },
 ): Promise<ResolvedOrder> {
   let cache: CatalogCache | undefined;
-  if (catalog) {
-    cache = catalog;
+  if (options?.catalog) {
+    cache = options.catalog;
   } else if (
     tenant.bizimhesapApiKey &&
     tenant.bizimhesapApiKey !== "REPLACE_API_KEY"
@@ -147,30 +204,48 @@ export async function resolveOrderMappings(
     cache = new CatalogCache(tenant.bizimhesapApiKey);
   }
 
-  let customer: Awaited<ReturnType<typeof resolveCustomerMapping>>;
+  const overrides = options?.manualOverrides;
+
+  let customer: ResolvedCustomer;
   try {
     customer = await resolveCustomerMapping(
       tenant.tenantId,
-      draft as Parameters<typeof resolveCustomerMapping>[1],
+      draft,
       cache,
+      overrides?.customerId,
     );
   } catch (error) {
     logger.warn({ error }, "Cari eşleştirme hatası — katalog atlandı");
     customer = await resolveCustomerMapping(
       tenant.tenantId,
-      draft as Parameters<typeof resolveCustomerMapping>[1],
+      draft,
+      undefined,
+      overrides?.customerId,
     );
   }
 
   const lines: ResolvedLine[] = [];
   for (let i = 0; i < draft.lines.length; i++) {
     const line = draft.lines[i]!;
-    let resolved: Awaited<ReturnType<typeof resolveProductLine>>;
+    const manualProductId = overrides?.productIdsByLine?.[i];
+    let resolved: ResolvedProductLine;
     try {
-      resolved = await resolveProductLine(tenant.tenantId, line, cache);
+      resolved = await resolveProductLine(
+        tenant.tenantId,
+        line,
+        cache,
+        i,
+        manualProductId,
+      );
     } catch (error) {
       logger.warn({ error, line: line.name }, "Ürün eşleştirme hatası — katalog atlandı");
-      resolved = await resolveProductLine(tenant.tenantId, line);
+      resolved = await resolveProductLine(
+        tenant.tenantId,
+        line,
+        undefined,
+        i,
+        manualProductId,
+      );
     }
     lines.push({
       ...resolved,
@@ -181,20 +256,57 @@ export async function resolveOrderMappings(
 
   const stockWarnings = await checkStockWarnings(tenant, lines);
   const blockingErrors = buildBlockingErrors(customer, lines);
+  const { customerSuggestion, productSuggestions } = collectSuggestions(
+    customer,
+    lines,
+  );
 
   return {
     customer,
     lines,
     stockWarnings,
     blockingErrors,
+    customerSuggestion,
+    productSuggestions,
+    manualOverrides: overrides,
   };
 }
 
-export function toResolvedOrderSnapshot(resolved: ResolvedOrder): ResolvedOrderSnapshot {
+export function toResolvedOrderSnapshot(
+  resolved: ResolvedOrder,
+): ResolvedOrderSnapshot {
   return {
     customer: resolved.customer,
     lines: resolved.lines,
     stockWarnings: resolved.stockWarnings,
     blockingErrors: resolved.blockingErrors,
+    customerSuggestion: resolved.customerSuggestion,
+    productSuggestions: resolved.productSuggestions,
+    manualOverrides: resolved.manualOverrides,
+  };
+}
+
+export function parseManualOverridesFromMappingJson(
+  mappingJson: unknown,
+): ManualOverrides | undefined {
+  if (!mappingJson || typeof mappingJson !== "object") return undefined;
+  const record = mappingJson as Record<string, unknown>;
+  const raw = record.manualOverrides;
+  if (!raw || typeof raw !== "object") return undefined;
+  const mo = raw as Record<string, unknown>;
+  const productIdsByLine: Record<number, string> = {};
+  const rawProducts = mo.productIdsByLine;
+  if (rawProducts && typeof rawProducts === "object") {
+    for (const [key, val] of Object.entries(rawProducts)) {
+      if (typeof val === "string") {
+        productIdsByLine[Number.parseInt(key, 10)] = val;
+      }
+    }
+  }
+  return {
+    customerId:
+      typeof mo.customerId === "string" ? mo.customerId : undefined,
+    productIdsByLine:
+      Object.keys(productIdsByLine).length > 0 ? productIdsByLine : undefined,
   };
 }

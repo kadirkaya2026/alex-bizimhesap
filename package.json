@@ -14,6 +14,7 @@
     "test:addinvoice": "tsx scripts/test-addinvoice.ts",
     "test": "tsx --test src/**/*.test.ts",
     "sync:catalog-mappings": "tsx scripts/sync-catalog-mappings.ts",
+    "probe:catalog": "tsx scripts/probe-catalog.ts",
     "railway:setup": "bash scripts/railway-setup.sh",
     "railway:allow-phone": "bash scripts/railway-allow-phone.sh",
     "verify:prod": "bash scripts/verify-production.sh",

@@ -30,3 +30,8 @@ export function isHelpCommand(text: string): boolean {
   const t = text.trim().toLowerCase();
   return ["yardım", "yardim", "help", "?", "merhaba", "selam"].includes(t);
 }
+
+export function isRefreshCommand(text: string): boolean {
+  const t = text.trim().toUpperCase();
+  return t === "YENIDEN" || t === "YENİDEN";
+}

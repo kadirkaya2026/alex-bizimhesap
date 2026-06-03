@@ -8,9 +8,11 @@ import { PrismaClient } from "@prisma/client";
 import { listCustomers } from "../src/services/bizimhesap/customers.js";
 import { listProducts } from "../src/services/bizimhesap/products.js";
 import {
+  getAllProductCodes,
   normalizeCustomerRecord,
   normalizeProductRecord,
 } from "../src/services/matching/catalog.js";
+import { normalizeCode } from "../src/services/matching/score.js";
 
 const prisma = new PrismaClient();
 
@@ -50,9 +52,11 @@ for (const row of rawCustomers) {
 }
 
 let productCount = 0;
+let skuMappingCount = 0;
 for (const row of rawProducts) {
   const p = normalizeProductRecord(row);
   if (!p) continue;
+
   await prisma.productMapping.upsert({
     where: {
       tenantId_localName: { tenantId: tenant.id, localName: p.title },
@@ -60,16 +64,51 @@ for (const row of rawProducts) {
     create: {
       tenantId: tenant.id,
       localName: p.title,
-      localSku: p.barcode ?? null,
+      localSku: p.codes[0] ?? null,
       bizimhesapProductId: p.id,
     },
     update: {
       bizimhesapProductId: p.id,
-      ...(p.barcode ? { localSku: p.barcode } : {}),
+      ...(p.codes[0] ? { localSku: p.codes[0] } : {}),
     },
   });
   productCount++;
+
+  for (const code of getAllProductCodes(p)) {
+    const normalized = normalizeCode(code);
+    if (normalized.length < 2) continue;
+
+    const skuKey = `${p.id}:${normalized}`;
+    const localNameForSku = `${p.title} [${code}]`;
+
+    try {
+      const existing = await prisma.productMapping.findFirst({
+        where: { tenantId: tenant.id, localSku: code },
+      });
+      if (existing) {
+        await prisma.productMapping.update({
+          where: { id: existing.id },
+          data: { bizimhesapProductId: p.id },
+        });
+      } else {
+        await prisma.productMapping.create({
+          data: {
+            tenantId: tenant.id,
+            localName: localNameForSku.slice(0, 200),
+            localSku: code,
+            bizimhesapProductId: p.id,
+          },
+        });
+      }
+      skuMappingCount++;
+    } catch {
+      // duplicate local_name — skip
+      void skuKey;
+    }
+  }
 }
 
-console.log(`Eşleme tamamlandı: ${customerCount} cari, ${productCount} ürün`);
+console.log(
+  `Eşleme tamamlandı: ${customerCount} cari, ${productCount} ürün, ${skuMappingCount} kod eşlemesi`,
+);
 await prisma.$disconnect();

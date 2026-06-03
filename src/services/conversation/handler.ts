@@ -8,9 +8,16 @@ import {
   postAddInvoice,
 } from "../bizimhesap/invoice.js";
 import {
+  applyMappingCommand,
+  isMappingCommand,
+  parseMappingCommand,
+} from "../matching/mapping-commands.js";
+import {
+  parseManualOverridesFromMappingJson,
   resolveOrderMappings,
   toResolvedOrderSnapshot,
 } from "../matching/resolve-order.js";
+import type { ManualOverrides } from "../matching/types.js";
 import { parseOrderDraftFromPdfText } from "../parser/order-draft.js";
 import {
   extractStorefrontPdfUrlFromText,
@@ -36,6 +43,7 @@ import {
   isCancelCommand,
   isConfirmCommand,
   isHelpCommand,
+  isRefreshCommand,
 } from "./state.js";
 
 const HELP_TEXT = `Alex Bizimhesap asistanı
@@ -43,6 +51,11 @@ const HELP_TEXT = `Alex Bizimhesap asistanı
 • eKatalox PDF linki veya PDF dosyası gönderin
 • Özet geldikten sonra ONAYLA yazın
 • İPTAL ile işlemi iptal edin
+
+Eşleştirme komutları (önizleme beklerken):
+• CARI:<id veya ünvan> — cari eşleştir
+• SKU:<kod> — 1. satır ürün (veya SKU2:, SKU3:...)
+• YENIDEN — eşleştirmeyi yenile
 
 Not: Dekont fotoğrafı desteği yakında eklenecek.`;
 
@@ -100,6 +113,39 @@ async function checkDuplicateOrder(
   return null;
 }
 
+async function sendPreviewForJob(
+  tenant: ResolvedTenant,
+  jobId: string,
+  draft: OrderDraft,
+  manualOverrides?: ManualOverrides,
+) {
+  const resolved = await resolveOrderMappings(tenant, draft, { manualOverrides });
+  const mappingSnapshot = toResolvedOrderSnapshot(resolved);
+
+  await prisma.invoiceJob.update({
+    where: { id: jobId },
+    data: { mappingJson: mappingSnapshot as object },
+  });
+
+  await sendWhatsAppText(
+    tenant.phoneE164,
+    formatPreviewMessage({
+      customerName: draft.customerName,
+      orderNumber: draft.orderNumber ?? undefined,
+      lineCount: draft.lines.length,
+      total: formatDraftTotal(draft),
+      customer: resolved.customer,
+      lines: resolved.lines,
+      stockWarnings: resolved.stockWarnings,
+      blockingErrors: resolved.blockingErrors,
+      customerSuggestion: resolved.customerSuggestion,
+      productSuggestions: resolved.productSuggestions,
+    }),
+  );
+
+  return resolved;
+}
+
 async function createPreviewJob(
   tenant: ResolvedTenant,
   draft: OrderDraft,
@@ -119,16 +165,12 @@ async function createPreviewJob(
     return;
   }
 
-  const resolved = await resolveOrderMappings(tenant, draft);
-  const mappingSnapshot = toResolvedOrderSnapshot(resolved);
-
   const job = await prisma.invoiceJob.create({
     data: {
       tenantId: tenant.tenantId,
       phoneE164: tenant.phoneE164,
       orderNumber: draft.orderNumber ?? null,
       draftJson: draft as object,
-      mappingJson: mappingSnapshot as object,
       draftHash,
       status: InvoiceJobStatus.PREVIEW,
       whatsappMsgId,
@@ -141,19 +183,7 @@ async function createPreviewJob(
     job.id,
   );
 
-  await sendWhatsAppText(
-    tenant.phoneE164,
-    formatPreviewMessage({
-      customerName: draft.customerName,
-      orderNumber: draft.orderNumber ?? undefined,
-      lineCount: draft.lines.length,
-      total: formatDraftTotal(draft),
-      customer: resolved.customer,
-      lines: resolved.lines,
-      stockWarnings: resolved.stockWarnings,
-      blockingErrors: resolved.blockingErrors,
-    }),
-  );
+  await sendPreviewForJob(tenant, job.id, draft);
 }
 
 async function processPdfText(
@@ -169,6 +199,68 @@ async function processPdfText(
 
   const draft = await parseOrderDraftFromPdfText(pdfText);
   await createPreviewJob(tenant, draft, messageId);
+}
+
+async function handleRefreshPreview(tenant: ResolvedTenant) {
+  const job = await findLatestAwaitingConfirmJob(
+    tenant.tenantId,
+    tenant.phoneE164,
+  );
+  if (!job) {
+    await sendWhatsAppText(
+      tenant.phoneE164,
+      "Yenilenecek bir fiş özeti yok. Önce PDF gönderin.",
+    );
+    return;
+  }
+
+  const draft = job.draftJson as OrderDraft;
+  const overrides = parseManualOverridesFromMappingJson(job.mappingJson);
+  await sendPreviewForJob(tenant, job.id, draft, overrides);
+  await sendWhatsAppText(tenant.phoneE164, "Eşleştirme yenilendi.");
+}
+
+async function handleMappingCommandText(
+  tenant: ResolvedTenant,
+  text: string,
+) {
+  const job = await findLatestAwaitingConfirmJob(
+    tenant.tenantId,
+    tenant.phoneE164,
+  );
+  if (!job) {
+    await sendWhatsAppText(
+      tenant.phoneE164,
+      "Eşleştirme komutu için önce PDF gönderip önizleme alın.",
+    );
+    return;
+  }
+
+  const command = parseMappingCommand(text);
+  if (!command) return;
+
+  if (command.type === "yeniden") {
+    await handleRefreshPreview(tenant);
+    return;
+  }
+
+  const draft = job.draftJson as OrderDraft;
+  const existingOverrides = parseManualOverridesFromMappingJson(job.mappingJson);
+
+  const result = await applyMappingCommand(
+    tenant,
+    draft,
+    command,
+    existingOverrides,
+  );
+
+  if ("error" in result) {
+    await sendWhatsAppText(tenant.phoneE164, result.error);
+    return;
+  }
+
+  await sendWhatsAppText(tenant.phoneE164, result.message);
+  await sendPreviewForJob(tenant, job.id, draft, result.overrides);
 }
 
 async function handleConfirm(tenant: ResolvedTenant) {
@@ -211,7 +303,8 @@ async function handleConfirm(tenant: ResolvedTenant) {
   );
 
   const draft = job.draftJson as OrderDraft;
-  const resolved = await resolveOrderMappings(tenant, draft);
+  const overrides = parseManualOverridesFromMappingJson(job.mappingJson);
+  const resolved = await resolveOrderMappings(tenant, draft, { manualOverrides: overrides });
 
   await prisma.invoiceJob.update({
     where: { id: job.id },
@@ -227,7 +320,11 @@ async function handleConfirm(tenant: ResolvedTenant) {
     );
     await sendWhatsAppText(
       tenant.phoneE164,
-      formatBlockingErrorsMessage(resolved.blockingErrors),
+      formatBlockingErrorsMessage({
+        blockingErrors: resolved.blockingErrors,
+        customerSuggestion: resolved.customerSuggestion,
+        productSuggestions: resolved.productSuggestions,
+      }),
     );
     return;
   }
@@ -360,6 +457,14 @@ export async function handleInboundMessage(
     }
     if (isCancelCommand(message.text)) {
       await handleCancel(tenant);
+      return;
+    }
+    if (isRefreshCommand(message.text)) {
+      await handleRefreshPreview(tenant);
+      return;
+    }
+    if (isMappingCommand(message.text)) {
+      await handleMappingCommandText(tenant, message.text);
       return;
     }
 
