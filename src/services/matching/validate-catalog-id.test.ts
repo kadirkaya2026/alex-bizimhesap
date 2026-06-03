@@ -46,7 +46,7 @@ describe("sanitizeProductId", () => {
     assert.equal(result.source, "none");
   });
 
-  it("preserves productId when catalog unavailable", async () => {
+  it("strips productId when catalog unavailable so fallback applies", async () => {
     const result = await sanitizeProductId(
       {
         productId: "SOME-ID",
@@ -55,6 +55,7 @@ describe("sanitizeProductId", () => {
       },
       undefined,
     );
-    assert.equal(result.productId, "SOME-ID");
+    assert.equal(result.productId, undefined);
+    assert.equal(result.source, "none");
   });
 });

@@ -83,7 +83,20 @@ export async function sanitizeProductId(
   }
 
   if (!cache) {
-    return line;
+    logger.warn(
+      { productId: line.productId, name: line.name, source: line.source },
+      "Katalog yüklenemedi — ürün ID doğrulanamadı, fallback kullanılacak",
+    );
+    return {
+      ...line,
+      productId: undefined,
+      bizimhesapTitle: undefined,
+      bizimhesapBarcode: undefined,
+      invoiceLineNote: undefined,
+      matchScore: undefined,
+      source: "none",
+      suggestion: undefined,
+    };
   }
 
   const inCatalog = await cache.findProductById(line.productId);

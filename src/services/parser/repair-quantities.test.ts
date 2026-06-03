@@ -43,6 +43,36 @@ describe("extractQtyFromPdfText", () => {
     };
     assert.equal(extractQtyFromPdfText(pdf, line), 2);
   });
+
+  it("parses 2x pattern", () => {
+    const pdf = "Lucatech LB-1002 Hoparlör 2x 8.95 $ 17.90 $";
+    const line: OrderDraftLine = {
+      name: "Lucatech LB-1002 Hoparlör",
+      qty: 1,
+      unitPrice: 8.95,
+    };
+    assert.equal(extractQtyFromPdfText(pdf, line), 2);
+  });
+
+  it("parses 2.00 quantity", () => {
+    const pdf = "Lucatech LB-1002 Hoparlör 2.00 8.95 $ 17.90 $";
+    const line: OrderDraftLine = {
+      name: "Lucatech LB-1002 Hoparlör",
+      qty: 1,
+      unitPrice: 8.95,
+    };
+    assert.equal(extractQtyFromPdfText(pdf, line), 2);
+  });
+
+  it("parses 2 adet pattern", () => {
+    const pdf = "Lucatech LB-1002 Hoparlör 2 adet 8.95 $ 17.90 $";
+    const line: OrderDraftLine = {
+      name: "Lucatech LB-1002 Hoparlör",
+      qty: 1,
+      unitPrice: 8.95,
+    };
+    assert.equal(extractQtyFromPdfText(pdf, line), 2);
+  });
 });
 
 describe("repairLineQuantitiesFromPdfText", () => {
@@ -68,5 +98,23 @@ describe("repairLineQuantitiesFromPdfText", () => {
     const repaired = repairLineQuantitiesFromPdfText(lucatechPdf, draft);
     assert.equal(repaired.lines[0]?.qty, 2);
     assert.equal(repaired.lines[1]?.qty, 1);
+  });
+
+  it("does not downgrade qty from 2 to 1 when PDF evidence is weak", () => {
+    const draft = {
+      customerName: "Lucatech",
+      currency: "USD" as const,
+      lines: [
+        {
+          name: "Lucatech LB-1002 Taşınabilir Hoparlör",
+          qty: 2,
+          unitPrice: 8.95,
+        },
+      ],
+      source: "pdf_text" as const,
+    };
+    const pdfWithoutQty = "Lucatech LB-1002 Taşınabilir Hoparlör 8.95 $ 17.90 $";
+    const repaired = repairLineQuantitiesFromPdfText(pdfWithoutQty, draft);
+    assert.equal(repaired.lines[0]?.qty, 2);
   });
 });

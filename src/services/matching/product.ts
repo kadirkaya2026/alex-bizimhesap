@@ -113,7 +113,6 @@ export async function resolveProductLine(
         productId: bySku.bizimhesapProductId,
         name,
         sku: code,
-        bizimhesapTitle: code,
         source: "db",
       });
     }
@@ -129,7 +128,6 @@ export async function resolveProductLine(
         productId: bySkuName.bizimhesapProductId,
         name,
         sku: code,
-        bizimhesapTitle: code,
         source: "db",
       });
     }
