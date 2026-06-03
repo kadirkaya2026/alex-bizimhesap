@@ -29,6 +29,7 @@ export interface InvoiceProductLineMeta {
   productId?: string;
   bizimhesapTitle?: string;
   bizimhesapBarcode?: string;
+  invoiceLineNote?: string;
 }
 
 export function buildAddInvoicePayload(params: {
@@ -86,6 +87,7 @@ export function buildAddInvoicePayload(params: {
       ...(productId ? { productId } : {}),
       productName,
       ...(barcode ? { barcode } : {}),
+      ...(meta?.invoiceLineNote ? { note: meta.invoiceLineNote } : {}),
       taxRate: formatMoney(calc.taxRate),
       quantity: line.qty,
       unitPrice: formatMoney(line.unitPrice),

@@ -13,6 +13,14 @@ import type {
   ManualOverrides,
   ProductSuggestion,
 } from "./types.js";
+import {
+  applyCustomerFallback,
+  applyProductFallback,
+  buildMappingWarnings,
+  type MappingWarning,
+} from "./smart-mapping.js";
+
+export type { MappingWarning } from "./smart-mapping.js";
 
 export type { MatchSource } from "./customer.js";
 export type { ResolvedCustomer } from "./customer.js";
@@ -42,6 +50,7 @@ export interface ResolvedOrder {
   lines: ResolvedLine[];
   stockWarnings: StockWarning[];
   blockingErrors: string[];
+  mappingWarnings: MappingWarning[];
   customerSuggestion?: CustomerSuggestion;
   productSuggestions: ProductSuggestion[];
   manualOverrides?: ManualOverrides;
@@ -53,6 +62,7 @@ export interface ResolvedOrderSnapshot {
   lines: ResolvedLine[];
   stockWarnings: StockWarning[];
   blockingErrors: string[];
+  mappingWarnings: MappingWarning[];
   customerSuggestion?: CustomerSuggestion;
   productSuggestions: ProductSuggestion[];
   manualOverrides?: ManualOverrides;
@@ -73,6 +83,14 @@ function buildBlockingErrors(
     }
   }
   return errors;
+}
+
+/** Smart Mapping sonrası yalnızca fallback env eksikse engelleme kalır. */
+function buildPostSmartBlockingErrors(
+  customer: ResolvedCustomer,
+  lines: ResolvedLine[],
+): string[] {
+  return buildBlockingErrors(customer, lines);
 }
 
 function collectSuggestions(
@@ -274,8 +292,16 @@ export async function resolveOrderMappings(
     });
   }
 
+  customer = await applyCustomerFallback(customer, cache);
+
+  for (let i = 0; i < lines.length; i++) {
+    const updated = await applyProductFallback(lines[i]!, cache);
+    lines[i] = { ...updated, index: i, qty: lines[i]!.qty };
+  }
+
   const stockWarnings = await checkStockWarnings(tenant, lines);
-  const blockingErrors = buildBlockingErrors(customer, lines);
+  const mappingWarnings = buildMappingWarnings(customer, lines);
+  const blockingErrors = buildPostSmartBlockingErrors(customer, lines);
   const { customerSuggestion, productSuggestions } = collectSuggestions(
     customer,
     lines,
@@ -286,6 +312,7 @@ export async function resolveOrderMappings(
     lines,
     stockWarnings,
     blockingErrors,
+    mappingWarnings,
     customerSuggestion,
     productSuggestions,
     manualOverrides: overrides,
@@ -301,6 +328,7 @@ export function toResolvedOrderSnapshot(
     lines: resolved.lines,
     stockWarnings: resolved.stockWarnings,
     blockingErrors: resolved.blockingErrors,
+    mappingWarnings: resolved.mappingWarnings,
     customerSuggestion: resolved.customerSuggestion,
     productSuggestions: resolved.productSuggestions,
     manualOverrides: resolved.manualOverrides,

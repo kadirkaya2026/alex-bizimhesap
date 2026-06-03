@@ -89,4 +89,28 @@ describe("buildAddInvoicePayload", () => {
     assert.equal(resolveInvoiceCurrency({ ...baseDraft, currency: "TRY" }, "TL"), "TL");
     assert.equal(payload.amounts.currency, "TL");
   });
+
+  it("sets note field for fallback product line", () => {
+    const payload = buildAddInvoicePayload({
+      draft: baseDraft,
+      firmId: "FIRM",
+      defaultTaxRate: 20,
+      defaultDueDays: 30,
+      defaultCurrency: "TL",
+      customerId: "C1",
+      productMetaByLine: () => ({
+        productId: "FALLBACK-PROD",
+        bizimhesapTitle: "Tanımsız WhatsApp Ürünü",
+        invoiceLineNote:
+          "Lucatech LA-031 Ultrasonik Led Işıklı Hava Nemlendirici",
+      }),
+      requireMappedIds: true,
+    });
+
+    assert.equal(
+      payload.details[0]?.note,
+      "Lucatech LA-031 Ultrasonik Led Işıklı Hava Nemlendirici",
+    );
+    assert.equal(payload.details[0]?.productName, "Tanımsız WhatsApp Ürünü");
+  });
 });

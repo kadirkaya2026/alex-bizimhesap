@@ -4,11 +4,13 @@ import type { CatalogCache } from "./catalog.js";
 import { searchCustomerInCatalog } from "./catalog.js";
 import type { MatchSuggestion } from "./types.js";
 
-export type MatchSource = "db" | "catalog" | "manual" | "none";
+export type MatchSource = "db" | "catalog" | "manual" | "fallback" | "none";
 
 export interface ResolvedCustomer {
   customerId?: string;
   title: string;
+  bizimhesapTitle?: string;
+  matchScore?: number;
   source: MatchSource;
   suggestion?: MatchSuggestion;
 }
@@ -71,6 +73,8 @@ export async function resolveCustomerMapping(
       return {
         customerId: result.matched.id,
         title,
+        bizimhesapTitle: result.matched.title,
+        matchScore: result.matchScore,
         source: "catalog",
       };
     }

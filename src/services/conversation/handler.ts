@@ -139,6 +139,7 @@ async function sendPreviewForJob(
       lines: resolved.lines,
       stockWarnings: resolved.stockWarnings,
       blockingErrors: resolved.blockingErrors,
+      mappingWarnings: resolved.mappingWarnings,
       customerSuggestion: resolved.customerSuggestion,
       productSuggestions: resolved.productSuggestions,
       catalogStats: resolved.catalogStats,
@@ -324,12 +325,20 @@ async function handleConfirm(tenant: ResolvedTenant) {
       tenant.phoneE164,
       formatBlockingErrorsMessage({
         blockingErrors: resolved.blockingErrors,
+        mappingWarnings: resolved.mappingWarnings,
         customerSuggestion: resolved.customerSuggestion,
         productSuggestions: resolved.productSuggestions,
         catalogStats: resolved.catalogStats,
       }),
     );
     return;
+  }
+
+  if (resolved.mappingWarnings.length > 0) {
+    logger.warn(
+      { jobId: job.id, warnings: resolved.mappingWarnings },
+      "Smart Mapping fallback/uyarı ile ONAYLA devam ediliyor",
+    );
   }
 
   const payload = buildAddInvoicePayload({
@@ -347,6 +356,7 @@ async function handleConfirm(tenant: ResolvedTenant) {
         productId: line.productId,
         bizimhesapTitle: line.bizimhesapTitle,
         bizimhesapBarcode: line.bizimhesapBarcode,
+        invoiceLineNote: line.invoiceLineNote,
       };
     },
     requireMappedIds: true,

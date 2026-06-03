@@ -1,6 +1,20 @@
 import { normalizeMatchText } from "./normalize.js";
+import { getEnv } from "../../config/env.js";
 
-export const AUTO_MATCH_THRESHOLD = 75;
+/** Otomatik eşleştirme eşiği (0-100). Env: FUZZY_MATCH_THRESHOLD, default 70. */
+export function getAutoMatchThreshold(): number {
+  return getEnv().FUZZY_MATCH_THRESHOLD;
+}
+
+/** Öneri gösterimi eşiği — otomatik eşiğin 20 puan altı. */
+export function getSuggestionThreshold(): number {
+  return Math.max(30, getAutoMatchThreshold() - 20);
+}
+
+/** @deprecated Use getAutoMatchThreshold() */
+export const AUTO_MATCH_THRESHOLD = 70;
+
+/** @deprecated Use getSuggestionThreshold() */
 export const SUGGESTION_THRESHOLD = 50;
 
 export function normalizeCode(value: string): string {

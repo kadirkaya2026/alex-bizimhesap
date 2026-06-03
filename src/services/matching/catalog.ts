@@ -5,13 +5,13 @@ import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js
 import { extractLineCodeCandidates, looksLikeProductCode, lineContainsProductCode } from "./extract-codes.js";
 import { normalizeMatchText, pickNumber, pickString } from "./normalize.js";
 import {
-  AUTO_MATCH_THRESHOLD,
+  getAutoMatchThreshold,
+  getSuggestionThreshold,
   normalizeCode,
   normalizePhone,
   pickBestCandidate,
   scoreCodeMatch,
   scoreNameMatch,
-  SUGGESTION_THRESHOLD,
   type ScoredCandidate,
 } from "./score.js";
 import type { MatchSuggestion } from "./types.js";
@@ -91,6 +91,7 @@ export interface CatalogProduct {
 export interface CatalogSearchResult<T> {
   matched: T | null;
   suggestion: MatchSuggestion | null;
+  matchScore?: number;
 }
 
 function collectCodes(record: Record<string, unknown>, productId: string): string[] {
@@ -301,6 +302,7 @@ export async function searchCustomerInCatalog(
       return {
         matched: customer,
         suggestion: null,
+        matchScore: 100,
       };
     }
 
@@ -309,12 +311,13 @@ export async function searchCustomerInCatalog(
         return {
           matched: customer,
           suggestion: null,
+          matchScore: 100,
         };
       }
     }
 
     const nameScore = scoreNameMatch(draft.customerName, customer.title);
-    if (nameScore >= SUGGESTION_THRESHOLD) {
+    if (nameScore >= getSuggestionThreshold()) {
       candidates.push({
         item: customer,
         score: nameScore,
@@ -328,8 +331,8 @@ export async function searchCustomerInCatalog(
     return { matched: null, suggestion: null };
   }
 
-  if (best.score >= AUTO_MATCH_THRESHOLD) {
-    return { matched: best.item, suggestion: null };
+  if (best.score >= getAutoMatchThreshold()) {
+    return { matched: best.item, suggestion: null, matchScore: best.score };
   }
 
   return {
@@ -349,7 +352,7 @@ export async function searchProductInCatalog(
   for (const code of codeCandidates) {
     const byCode = await cache.findProductByCode(code);
     if (byCode) {
-      return { matched: byCode, suggestion: null };
+      return { matched: byCode, suggestion: null, matchScore: 100 };
     }
   }
 
@@ -357,7 +360,7 @@ export async function searchProductInCatalog(
 
   for (const product of products) {
     if (lineContainsProductCode(line.name, product.title)) {
-      return { matched: product, suggestion: null };
+      return { matched: product, suggestion: null, matchScore: 100 };
     }
   }
 
@@ -367,7 +370,7 @@ export async function searchProductInCatalog(
     for (const code of codeCandidates) {
       for (const productCode of product.codes) {
         const codeScore = scoreCodeMatch(code, productCode);
-        if (codeScore >= SUGGESTION_THRESHOLD) {
+        if (codeScore >= getSuggestionThreshold()) {
           candidates.push({
             item: product,
             score: codeScore,
@@ -378,7 +381,7 @@ export async function searchProductInCatalog(
     }
 
     const nameScore = scoreNameMatch(line.name, product.title);
-    if (nameScore >= SUGGESTION_THRESHOLD) {
+    if (nameScore >= getSuggestionThreshold()) {
       candidates.push({
         item: product,
         score: nameScore,
@@ -403,8 +406,8 @@ export async function searchProductInCatalog(
     skuHint ??
     best.item.id;
 
-  if (best.score >= AUTO_MATCH_THRESHOLD) {
-    return { matched: best.item, suggestion: null };
+  if (best.score >= getAutoMatchThreshold()) {
+    return { matched: best.item, suggestion: null, matchScore: best.score };
   }
 
   return {

@@ -88,7 +88,7 @@ Alex ONAYLA öncesi **hibrit eşleştirme** yapar:
 1. PostgreSQL `customer_mappings` / `product_mappings` tabloları
 2. Bulunamazsa Bizimhesap kataloğu (`GET /customers`, `GET /products`) — vergi no, barkod/SKU, isim
 3. Katalog eşleşmesi tabloya **otomatik kaydedilir** (auto-learn)
-4. Eşleşmeyen cari veya ürün varsa **ONAYLA engellenir** — yeni kayıt oluşturulmaz
+4. Eşleşmeyen cari veya ürün varsa **varsayılan fallback ID** kullanılır (yapılandırıldıysa); yoksa fişleme başarısız olur
 
 Stok uyarısı (engelleme yok):
 
@@ -117,10 +117,40 @@ Tablolar:
 
 Önizleme mesajında her satır için ✓/✗ ve stok durumu görünür.
 
+## 5b. Smart Mapping (fuzzy + varsayılan cari/stok)
+
+Alex eşleştirme sırası:
+
+1. PostgreSQL mapping tabloları
+2. Bizimhesap kataloğu (`GET /customers`, `GET /products`) — vergi no, kod, **fuzzy isim** (Levenshtein, eşik %70)
+3. Eşleşme yoksa **varsayılan cari/stok** (env'deki fallback ID)
+
+**Varsayılan kayıtlar (Bizimhesap panelinde elle oluşturun):**
+
+| Kayıt | Önerilen ad |
+|-------|-------------|
+| Cari | WhatsApp Gelen Fişleri |
+| Stok | Tanımsız WhatsApp Ürünü |
+
+Railway Variables:
+
+```
+BIZIMHESAP_FALLBACK_CUSTOMER_ID=<cari-guid>
+BIZIMHESAP_FALLBACK_PRODUCT_ID=<stok-guid>
+FUZZY_MATCH_THRESHOLD=70
+```
+
+ID'leri doğrulamak için: `npm run probe:catalog`
+
+Fallback ürün satırında fişteki orijinal ürün adı fatura **satır açıklamasına** (`note`) yazılır. ONAYLA eşleşme olmasa bile (fallback tanımlıysa) fişlemeyi dener.
+
 ## 6. Kontrol listesi
 
 - [ ] `BIZIMHESAP_FIRM_ID` Railway'de SET
 - [ ] `BIZIMHESAP_API_KEY` Railway'de SET
+- [ ] `BIZIMHESAP_FALLBACK_CUSTOMER_ID` Railway'de SET
+- [ ] `BIZIMHESAP_FALLBACK_PRODUCT_ID` Railway'de SET
+- [ ] `FUZZY_MATCH_THRESHOLD=70` (opsiyonel)
 - [ ] `BIZIMHESAP_DEFAULT_WAREHOUSE_ID` (opsiyonel, stok uyarısı için)
 - [ ] `npm run sync:catalog-mappings` (ilk kurulum)
 - [ ] `npm run test:addinvoice` başarılı (yerel)

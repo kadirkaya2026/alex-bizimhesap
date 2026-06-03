@@ -16,6 +16,8 @@ export interface ResolvedProductLine {
   sku?: string;
   bizimhesapTitle?: string;
   bizimhesapBarcode?: string;
+  invoiceLineNote?: string;
+  matchScore?: number;
   source: MatchSource;
   suggestion?: MatchSuggestion;
 }
@@ -172,6 +174,7 @@ export async function resolveProductLine(
         name,
         sku,
         ...meta,
+        matchScore: result.matchScore,
         source: "catalog",
       };
     }

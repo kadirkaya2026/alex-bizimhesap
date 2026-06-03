@@ -14,6 +14,9 @@ const envSchema = z.object({
   BIZIMHESAP_API_KEY: z.string().optional(),
   BIZIMHESAP_BASE_URL: z.string().url().default("https://bizimhesap.com/api/b2b"),
   BIZIMHESAP_DEFAULT_WAREHOUSE_ID: z.string().optional(),
+  BIZIMHESAP_FALLBACK_CUSTOMER_ID: z.string().optional(),
+  BIZIMHESAP_FALLBACK_PRODUCT_ID: z.string().optional(),
+  FUZZY_MATCH_THRESHOLD: z.coerce.number().min(50).max(100).default(70),
   TENANT_NAME: z.string().default("Pilot Firma"),
   ALEX_ALLOWED_PHONES: z.string().default(""),
   DEFAULT_TAX_RATE: z.coerce.number().default(20),
@@ -91,6 +94,14 @@ export function assertBizimhesapConfigForProduction(): void {
   if (firmId.length < 32) {
     throw new Error(
       `BIZIMHESAP_FIRM_ID geçersiz uzunluk (${firmId.length}) — Bizimhesap panelinden FirmID girin.`,
+    );
+  }
+
+  const fallbackCustomer = env.BIZIMHESAP_FALLBACK_CUSTOMER_ID?.trim();
+  const fallbackProduct = env.BIZIMHESAP_FALLBACK_PRODUCT_ID?.trim();
+  if (!fallbackCustomer || !fallbackProduct) {
+    console.warn(
+      "BIZIMHESAP_FALLBACK_CUSTOMER_ID veya BIZIMHESAP_FALLBACK_PRODUCT_ID eksik — eşleşmeyen fişler fişlenmeyebilir.",
     );
   }
 }

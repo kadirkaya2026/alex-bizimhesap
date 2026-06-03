@@ -3,6 +3,8 @@ import { logger } from "../../lib/logger.js";
 import type { ResolvedCustomer } from "../matching/customer.js";
 import type { CatalogStats } from "../matching/catalog.js";
 import type { ResolvedLine, StockWarning } from "../matching/resolve-order.js";
+import { formatSourceLabel } from "../matching/smart-mapping.js";
+import type { MappingWarning } from "../matching/smart-mapping.js";
 import type {
   CustomerSuggestion,
   ProductSuggestion,
@@ -55,6 +57,7 @@ export function formatPreviewMessage(params: {
   lines?: ResolvedLine[];
   stockWarnings?: StockWarning[];
   blockingErrors?: string[];
+  mappingWarnings?: MappingWarning[];
   customerSuggestion?: CustomerSuggestion;
   productSuggestions?: ProductSuggestion[];
   catalogStats?: CatalogStats;
@@ -62,12 +65,10 @@ export function formatPreviewMessage(params: {
   const output: string[] = ["Sipariş özeti"];
 
   if (params.customer?.customerId) {
-    const src =
-      params.customer.source === "db"
-        ? "kayıtlı"
-        : params.customer.source === "manual"
-          ? "manuel"
-          : "katalog";
+    const src = formatSourceLabel(
+      params.customer.source,
+      params.customer.matchScore,
+    );
     output.push(
       `Cari: ${params.customerName} ✓ (#${params.customer.customerId}, ${src})`,
     );
@@ -92,12 +93,19 @@ export function formatPreviewMessage(params: {
         const stockWarn = params.stockWarnings?.find(
           (w) => w.productId === line.productId,
         );
-        if (stockWarn) {
+        const src = formatSourceLabel(line.source, line.matchScore);
+        if (line.source === "fallback") {
+          output.push(
+            `• ${line.name} ${qtyLabel} ⚠ varsayılan stok (#${line.productId}) — açıklamada: ${line.name}`,
+          );
+        } else if (stockWarn) {
           output.push(
             `• ${line.name} ${qtyLabel} ⚠ stok: ${stockWarn.available} (istenen: ${stockWarn.requested})`,
           );
         } else {
-          output.push(`• ${line.name} ${qtyLabel} ✓ (#${line.productId})`);
+          output.push(
+            `• ${line.name} ${qtyLabel} ✓ (#${line.productId}, ${src})`,
+          );
         }
       } else {
         const skuPart = line.sku ? ` SKU:${line.sku}` : "";
@@ -130,38 +138,58 @@ export function formatPreviewMessage(params: {
     );
   }
 
+  const mappingWarnings = params.mappingWarnings ?? [];
+  if (mappingWarnings.length > 0) {
+    output.push("", "Eşleştirme uyarıları:");
+    for (const warn of mappingWarnings) {
+      output.push(`• ${warn.message}`);
+    }
+  }
+
   const blocking = params.blockingErrors ?? [];
   if (blocking.length > 0) {
-    output.push("", "Eşleşmeyen:");
+    output.push("", "Eksik yapılandırma — fişleme başarısız olabilir:");
     for (const err of blocking) {
       output.push(`• ${err}`);
     }
-    output.push("", "Eşleşmeyen kalem varken ONAYLA çalışmaz.");
-    output.push("Komutlar: CARI:<id>  SKU:<kod>  SKU2:<kod>  YENIDEN");
+    output.push(
+      "",
+      "BIZIMHESAP_FALLBACK_CUSTOMER_ID ve BIZIMHESAP_FALLBACK_PRODUCT_ID ayarlayın.",
+    );
   }
 
   if (params.stockWarnings?.length && blocking.length === 0) {
     output.push("", "Stok uyarısı var; yine de ONAYLA ile devam edebilirsiniz.");
   }
 
+  if (mappingWarnings.some((w) => w.type === "customer" || w.type === "product")) {
+    output.push("", "Varsayılan cari/stok kullanıldı; ONAYLA ile fişlenebilir.");
+  }
+
   output.push(
     "",
     "ONAYLA yazınca Bizimhesap'a satış faturası açılır.",
     "İPTAL ile vazgeçebilirsiniz.",
+    "Manuel düzeltme: CARI:<id>  SKU:<kod>  SKU2:<kod>  YENIDEN",
   );
   return output.join("\n");
 }
 
 export function formatBlockingErrorsMessage(params: {
   blockingErrors: string[];
+  mappingWarnings?: MappingWarning[];
   customerSuggestion?: CustomerSuggestion;
   productSuggestions?: ProductSuggestion[];
   catalogStats?: CatalogStats;
 }): string {
   const lines = [
-    "Fişleme yapılamadı — eşleşmeyen kalemler:",
+    "Fişleme yapılamadı:",
     ...params.blockingErrors.map((e) => `• ${e}`),
   ];
+
+  for (const warn of params.mappingWarnings ?? []) {
+    lines.push(`• ${warn.message}`);
+  }
 
   if (params.customerSuggestion) {
     const s = params.customerSuggestion.suggestion;
@@ -178,27 +206,9 @@ export function formatBlockingErrorsMessage(params: {
     );
   }
 
-  const hasSuggestions =
-    Boolean(params.customerSuggestion) ||
-    (params.productSuggestions?.length ?? 0) > 0;
-  const catalogEmpty =
-    params.catalogStats &&
-    params.catalogStats.parsedCustomers === 0 &&
-    params.catalogStats.parsedProducts === 0;
-
-  if (!hasSuggestions) {
-    lines.push(
-      "",
-      catalogEmpty
-        ? "Öneri yok — Bizimhesap kataloğu boş. Yönetici API/auth ve sync/catalog kontrol etmeli."
-        : "Öneri yok — CARI: ve SKU: için ID/kodu bilmiyorsanız önce npm run probe:catalog veya Bizimhesap panelden kontrol edin.",
-    );
-  }
-
   lines.push(
     "",
-    "Bizimhesap'ta cari/ürün kaydı oluşturulmadı.",
-    "Komutlar: CARI:<id>  SKU:<kod>  SKU2:<kod>  YENIDEN",
+    "BIZIMHESAP_FALLBACK_CUSTOMER_ID ve BIZIMHESAP_FALLBACK_PRODUCT_ID Railway Variables'a ekleyin.",
   );
   return lines.join("\n");
 }
