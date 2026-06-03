@@ -43,7 +43,7 @@ const payload = buildAddInvoicePayload({
 
 console.log("Payload:", JSON.stringify(payload, null, 2));
 
-const result = await postAddInvoice(payload, apiKey);
+const result = await postAddInvoice(payload);
 
 console.log("Sonuç:", result);
 

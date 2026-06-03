@@ -18,11 +18,20 @@ function resolveBizimhesapCreds(tenant: {
   bizimhesapApiKey: string;
 }) {
   const env = getEnv();
+  const envFirmId = env.BIZIMHESAP_FIRM_ID?.trim();
+  const envApiKey = env.BIZIMHESAP_API_KEY?.trim();
+  const tenantFirmId = tenant.bizimhesapFirmId.trim();
+  const tenantApiKey = tenant.bizimhesapApiKey.trim();
+
   return {
     bizimhesapFirmId:
-      env.BIZIMHESAP_FIRM_ID?.trim() || tenant.bizimhesapFirmId.trim(),
+      envFirmId && envFirmId !== "REPLACE_FIRM_ID"
+        ? envFirmId
+        : tenantFirmId,
     bizimhesapApiKey:
-      env.BIZIMHESAP_API_KEY?.trim() || tenant.bizimhesapApiKey.trim(),
+      envApiKey && envApiKey !== "REPLACE_API_KEY"
+        ? envApiKey
+        : tenantApiKey,
   };
 }
 

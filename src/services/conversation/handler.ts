@@ -218,7 +218,7 @@ async function handleConfirm(tenant: ResolvedTenant) {
   });
 
   try {
-    const result = await postAddInvoice(payload, tenant.bizimhesapApiKey);
+    const result = await postAddInvoice(payload);
 
     if (result.error) {
       logger.warn(

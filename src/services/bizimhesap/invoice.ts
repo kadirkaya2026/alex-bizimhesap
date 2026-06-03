@@ -110,9 +110,6 @@ export function buildAddInvoicePayload(params: {
   };
 }
 
-export async function postAddInvoice(
-  payload: BizimhesapAddInvoicePayload,
-  apiKey: string,
-) {
-  return postAddInvoiceRaw(payload, apiKey);
+export async function postAddInvoice(payload: BizimhesapAddInvoicePayload) {
+  return postAddInvoiceRaw(payload);
 }
