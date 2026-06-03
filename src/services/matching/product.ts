@@ -92,6 +92,21 @@ export async function resolveProductLine(
         source: "db",
       };
     }
+
+    const bySkuName = await prisma.productMapping.findFirst({
+      where: {
+        tenantId,
+        localName: { equals: code, mode: "insensitive" },
+      },
+    });
+    if (bySkuName?.bizimhesapProductId) {
+      return {
+        productId: bySkuName.bizimhesapProductId,
+        name,
+        sku: code,
+        source: "db",
+      };
+    }
   }
 
   if (sku) {

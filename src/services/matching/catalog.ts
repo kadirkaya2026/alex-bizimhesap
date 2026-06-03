@@ -2,7 +2,7 @@ import { listCustomers } from "../bizimhesap/customers.js";
 import { listProducts } from "../bizimhesap/products.js";
 import { logger } from "../../lib/logger.js";
 import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js";
-import { extractLineCodeCandidates } from "./extract-codes.js";
+import { extractLineCodeCandidates, looksLikeProductCode, lineContainsProductCode } from "./extract-codes.js";
 import { normalizeMatchText, pickNumber, pickString } from "./normalize.js";
 import {
   AUTO_MATCH_THRESHOLD,
@@ -95,11 +95,15 @@ export interface CatalogSearchResult<T> {
 
 function collectCodes(record: Record<string, unknown>, productId: string): string[] {
   const codes = new Set<string>();
+  const title = pickString(record, TITLE_KEYS);
   for (const key of [...BARCODE_KEYS, ...EXTRA_CODE_KEYS, ...PRODUCT_ID_KEYS]) {
     const val = pickString(record, [key]);
     if (val) codes.add(val);
   }
   codes.add(productId);
+  if (title && looksLikeProductCode(title)) {
+    codes.add(title);
+  }
   return [...codes].filter((c) => normalizeCode(c).length >= 2);
 }
 
@@ -345,6 +349,13 @@ export async function searchProductInCatalog(
   }
 
   const products = await cache.getProducts();
+
+  for (const product of products) {
+    if (lineContainsProductCode(line.name, product.title)) {
+      return { matched: product, suggestion: null };
+    }
+  }
+
   const candidates: ScoredCandidate<CatalogProduct>[] = [];
 
   for (const product of products) {

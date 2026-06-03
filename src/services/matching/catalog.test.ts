@@ -4,7 +4,7 @@ import {
   normalizeCustomerRecord,
   normalizeProductRecord,
 } from "./catalog.js";
-import { extractLineCodeCandidates } from "./extract-codes.js";
+import { extractLineCodeCandidates, lineContainsProductCode } from "./extract-codes.js";
 import { parseMappingCommand } from "./mapping-commands.js";
 import { normalizeMatchText } from "./normalize.js";
 import {
@@ -50,6 +50,27 @@ describe("extractLineCodeCandidates", () => {
       unitPrice: 10,
     });
     assert.ok(codes.includes("MODEL-99"));
+  });
+
+  it("extracts embedded model code from long product name", () => {
+    const codes = extractLineCodeCandidates({
+      name: "Lucatech LA-031 Ultrasonik Led Işıklı Hava Nemlendirici",
+      qty: 1,
+      unitPrice: 10,
+    });
+    assert.ok(codes.includes("LA-031"));
+  });
+});
+
+describe("lineContainsProductCode", () => {
+  it("matches Bizimhesap title code inside PDF line name", () => {
+    assert.equal(
+      lineContainsProductCode(
+        "Lucatech LA-031 Ultrasonik Led Işıklı Hava Nemlendirici",
+        "LA-031",
+      ),
+      true,
+    );
   });
 });
 
