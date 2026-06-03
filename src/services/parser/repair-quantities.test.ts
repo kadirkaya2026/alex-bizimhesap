@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { OrderDraftLine } from "./order-draft.schema.js";
 import {
   extractQtyFromPdfText,
+  inferQtyFromDraftTotals,
   repairLineQuantitiesFromPdfText,
 } from "./repair-quantities.js";
 
@@ -15,6 +16,17 @@ Lucatech LU-004 64GB USB 3.0 Flash Disk  1  3.25 $  3.25 $
 Toplam: 22.70 $
 `;
 
+const multilinePdf = `
+Lucatech LB-1002 Taşınabilir Hoparlör
+2
+8.95 $
+17.90 $
+Lucatech LA-031 Ultrasonik
+1
+1.55 $
+1.55 $
+`;
+
 describe("extractQtyFromPdfText", () => {
   it("reads qty 2 from eKatalox table row for LB-1002", () => {
     const line: OrderDraftLine = {
@@ -23,6 +35,15 @@ describe("extractQtyFromPdfText", () => {
       unitPrice: 8.95,
     };
     assert.equal(extractQtyFromPdfText(lucatechPdf, line), 2);
+  });
+
+  it("reads qty 2 from multiline pdf-parse output", () => {
+    const line: OrderDraftLine = {
+      name: "Lucatech LB-1002 Taşınabilir Hoparlör",
+      qty: 1,
+      unitPrice: 8.95,
+    };
+    assert.equal(extractQtyFromPdfText(multilinePdf, line), 2);
   });
 
   it("keeps qty 1 when table shows 1", () => {
@@ -72,6 +93,24 @@ describe("extractQtyFromPdfText", () => {
       unitPrice: 8.95,
     };
     assert.equal(extractQtyFromPdfText(pdf, line), 2);
+  });
+});
+
+describe("inferQtyFromDraftTotals", () => {
+  it("fixes LB-1002 qty from draft total mismatch", () => {
+    const draft = {
+      customerName: "Lucatech",
+      currency: "USD" as const,
+      total: 22.7,
+      lines: [
+        { name: "Lucatech LB-1002 Hoparlör", qty: 1, unitPrice: 8.95 },
+        { name: "Lucatech LA-031", qty: 1, unitPrice: 1.55 },
+        { name: "Lucatech LU-004", qty: 1, unitPrice: 3.25 },
+      ],
+      source: "pdf_text" as const,
+    };
+    const fixed = inferQtyFromDraftTotals(draft);
+    assert.equal(fixed.lines[0]?.qty, 2);
   });
 });
 

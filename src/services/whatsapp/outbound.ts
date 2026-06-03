@@ -69,9 +69,13 @@ export function formatPreviewMessage(params: {
       params.customer.source,
       params.customer.matchScore,
     );
-    output.push(
-      `Cari: ${params.customerName} ✓ (#${params.customer.customerId}, ${src})`,
-    );
+    const cariLabel =
+      params.customer.bizimhesapTitle ?? params.customerName;
+    const idHint =
+      params.customer.customerId.length > 8
+        ? ` #${params.customer.customerId.slice(0, 8)}…`
+        : ` #${params.customer.customerId}`;
+    output.push(`Cari: ${params.customerName} ✓ → ${cariLabel} (${src}${idHint})`);
   } else {
     output.push(`Cari: ${params.customerName} ✗ eşleşmedi`);
     if (params.customerSuggestion) {
@@ -94,17 +98,22 @@ export function formatPreviewMessage(params: {
           (w) => w.productId === line.productId,
         );
         const src = formatSourceLabel(line.source, line.matchScore);
+        const displayName = line.bizimhesapTitle ?? line.name;
+        const idHint =
+          line.productId.length > 8
+            ? ` #${line.productId.slice(0, 8)}…`
+            : ` #${line.productId}`;
         if (line.source === "fallback") {
           output.push(
-            `• ${line.name} ${qtyLabel} ⚠ varsayılan stok (#${line.productId}) — açıklamada: ${line.name}`,
+            `• ${line.name} ${qtyLabel} ⚠ varsayılan stok → ${displayName} (${src}${idHint})`,
           );
         } else if (stockWarn) {
           output.push(
-            `• ${line.name} ${qtyLabel} ⚠ stok: ${stockWarn.available} (istenen: ${stockWarn.requested})`,
+            `• ${line.name} ${qtyLabel} ⚠ stok: ${stockWarn.available} (istenen: ${stockWarn.requested}) → ${displayName}`,
           );
         } else {
           output.push(
-            `• ${line.name} ${qtyLabel} ✓ (#${line.productId}, ${src})`,
+            `• ${line.name} ${qtyLabel} ✓ → ${displayName} (${src}${idHint})`,
           );
         }
       } else {

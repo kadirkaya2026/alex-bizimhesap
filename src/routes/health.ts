@@ -65,6 +65,9 @@ healthRouter.get("/health", async (_req, res) => {
 
   const mappings = dbUp ? await getMappingStats() : null;
 
+  const fallbackCustomerId = env.BIZIMHESAP_FALLBACK_CUSTOMER_ID?.trim();
+  const fallbackProductId = env.BIZIMHESAP_FALLBACK_PRODUCT_ID?.trim();
+
   res.status(dbUp ? 200 : 503).json({
     ok: dbUp,
     service: "alex-bizimhesap",
@@ -82,6 +85,9 @@ healthRouter.get("/health", async (_req, res) => {
       firmIdSuffix: firmId.length >= 4 ? firmId.slice(-4) : null,
       invalidPlaceholder:
         firmId === "REPLACE_FIRM_ID" || firmId.length === 0,
+      fallbackCustomerId: fallbackCustomerId ? "SET" : "MISSING",
+      fallbackProductId: fallbackProductId ? "SET" : "MISSING",
+      fuzzyMatchThreshold: env.FUZZY_MATCH_THRESHOLD,
     },
     mappings,
     railway: {

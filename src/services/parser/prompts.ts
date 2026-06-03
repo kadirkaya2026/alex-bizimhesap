@@ -14,7 +14,7 @@ Kurallar:
     * Satır tutarı ÷ birim fiyat tutarlı olmalı (17.90 / 8.95 = 2 adet)
     * Fişte adet açıkça görünüyorsa ASLA 1 yazma / varsayılan 1 kullanma
     * Yalnızca fişte hiç adet bilgisi yoksa qty: 1
-  - unitPrice: birim fiyat (fişteki para biriminde)
+  - unitPrice: Birim Fiyat sütunundaki tutar (satır toplamı DEĞİL). Örn: 8.95 $ birim, 17.90 $ satır toplamı → unitPrice: 8.95
   - taxRate (yoksa null veya 20)
 - currency: fişteki para birimi — $ veya USD ise "USD", € veya EUR ise "EUR", ₺/TL ise "TRY"
 - source her zaman "pdf_text".
@@ -32,6 +32,10 @@ ADET (qty) OKUMA — ZORUNLU:
 - "2 adet", "x2", "2 x", "Miktar: 2" gibi ifadeleri qty alanına yaz.
 - Satır tutarı ÷ birim fiyat = adet ise bu adeti kullan.
 - Fişte adet görünüyorsa varsayılan 1 kullanma.
+
+BİRİM FİYAT (unitPrice) — ZORUNLU:
+- Birim Fiyat / Fiyat sütununu oku; Satır Toplam / Tutar sütununu unitPrice alanına yazma.
+- Örnek tablo: "LB-1002 ... 2  8.95 $  17.90 $" → unitPrice: 8.95 (17.90 değil).
 
 Fiş metni:
 

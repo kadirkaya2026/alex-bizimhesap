@@ -41,7 +41,18 @@ export async function sanitizeCustomerId(
   }
 
   if (!cache) {
-    return customer;
+    logger.warn(
+      { customerId: customer.customerId, title: customer.title, source: customer.source },
+      "Katalog yüklenemedi — cari ID doğrulanamadı, fallback kullanılacak",
+    );
+    return {
+      ...customer,
+      customerId: undefined,
+      bizimhesapTitle: undefined,
+      matchScore: undefined,
+      source: "none",
+      suggestion: undefined,
+    };
   }
 
   if (await isKnownCatalogCustomerId(cache, customer.customerId)) {

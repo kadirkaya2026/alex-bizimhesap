@@ -1,4 +1,5 @@
 import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js";
+import { logger } from "../../lib/logger.js";
 import { resolveInvoiceCurrency } from "./currency.js";
 import { postAddInvoiceRaw } from "./client.js";
 import type { BizimhesapAddInvoicePayload } from "./types.js";
@@ -81,6 +82,23 @@ export function buildAddInvoicePayload(params: {
         `Ürün adı eksik — satır ${index + 1}: katalog başlığı bulunamadı (productId=${productId})`,
       );
     }
+    if (productId && productName === line.name.trim()) {
+      throw new Error(
+        `PDF ürün adı faturaya gönderilemez — satır ${index + 1}: bizimhesapTitle gerekli`,
+      );
+    }
+
+    logger.info(
+      {
+        lineIndex: index + 1,
+        productId: productId ?? null,
+        productName,
+        quantity: line.qty,
+        unitPrice: line.unitPrice,
+        pdfLineName: line.name,
+      },
+      "addinvoice satır payload",
+    );
 
     const barcode =
       productId && meta?.bizimhesapBarcode

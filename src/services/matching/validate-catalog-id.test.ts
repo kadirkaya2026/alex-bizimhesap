@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { CatalogCache } from "./catalog.js";
-import { sanitizeProductId } from "./validate-catalog-id.js";
+import { sanitizeCustomerId, sanitizeProductId } from "./validate-catalog-id.js";
 
 function mockCache(products: { id: string; title: string }[]): CatalogCache {
   return {
@@ -56,6 +56,19 @@ describe("sanitizeProductId", () => {
       undefined,
     );
     assert.equal(result.productId, undefined);
+    assert.equal(result.source, "none");
+  });
+
+  it("strips customerId when catalog unavailable so fallback applies", async () => {
+    const result = await sanitizeCustomerId(
+      {
+        customerId: "C-SOME",
+        title: "Test Cari",
+        source: "db",
+      },
+      undefined,
+    );
+    assert.equal(result.customerId, undefined);
     assert.equal(result.source, "none");
   });
 });

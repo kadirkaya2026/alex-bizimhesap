@@ -20,6 +20,10 @@ import {
 import type { ManualOverrides } from "../matching/types.js";
 import { parseOrderDraftFromPdfText } from "../parser/order-draft.js";
 import {
+  repairOrderDraftFromPdfText,
+  truncatePdfTextForStorage,
+} from "../parser/repair-order-draft.js";
+import {
   extractStorefrontPdfUrlFromText,
   getPdfTextFromBuffer,
   getPdfTextFromUrl,
@@ -114,13 +118,31 @@ async function checkDuplicateOrder(
   return null;
 }
 
+function applyPdfRepairsIfAvailable(
+  pdfText: string | null | undefined,
+  draft: OrderDraft,
+): OrderDraft {
+  if (!pdfText?.trim()) return draft;
+  return repairOrderDraftFromPdfText(pdfText, draft);
+}
+
 async function sendPreviewForJob(
   tenant: ResolvedTenant,
   jobId: string,
   draft: OrderDraft,
   manualOverrides?: ManualOverrides,
+  pdfText?: string | null,
 ) {
-  const resolved = await resolveOrderMappings(tenant, draft, { manualOverrides });
+  const repairedDraft = applyPdfRepairsIfAvailable(pdfText, draft);
+
+  await prisma.invoiceJob.update({
+    where: { id: jobId },
+    data: { draftJson: repairedDraft as object },
+  });
+
+  const resolved = await resolveOrderMappings(tenant, repairedDraft, {
+    manualOverrides,
+  });
   const mappingSnapshot = toResolvedOrderSnapshot(resolved);
 
   await prisma.invoiceJob.update({
@@ -131,10 +153,10 @@ async function sendPreviewForJob(
   await sendWhatsAppText(
     tenant.phoneE164,
     formatPreviewMessage({
-      customerName: draft.customerName,
-      orderNumber: draft.orderNumber ?? undefined,
-      lineCount: draft.lines.length,
-      total: formatDraftTotal(draft),
+      customerName: repairedDraft.customerName,
+      orderNumber: repairedDraft.orderNumber ?? undefined,
+      lineCount: repairedDraft.lines.length,
+      total: formatDraftTotal(repairedDraft),
       customer: resolved.customer,
       lines: resolved.lines,
       stockWarnings: resolved.stockWarnings,
@@ -153,6 +175,7 @@ async function createPreviewJob(
   tenant: ResolvedTenant,
   draft: OrderDraft,
   whatsappMsgId: string,
+  pdfText: string,
 ) {
   const draftHash = hashDraft(draft);
 
@@ -174,6 +197,7 @@ async function createPreviewJob(
       phoneE164: tenant.phoneE164,
       orderNumber: draft.orderNumber ?? null,
       draftJson: draft as object,
+      pdfText: truncatePdfTextForStorage(pdfText),
       draftHash,
       status: InvoiceJobStatus.PREVIEW,
       whatsappMsgId,
@@ -186,7 +210,7 @@ async function createPreviewJob(
     job.id,
   );
 
-  await sendPreviewForJob(tenant, job.id, draft);
+  await sendPreviewForJob(tenant, job.id, draft, undefined, pdfText);
 }
 
 async function processPdfText(
@@ -201,7 +225,7 @@ async function processPdfText(
   );
 
   const draft = await parseOrderDraftFromPdfText(pdfText);
-  await createPreviewJob(tenant, draft, messageId);
+  await createPreviewJob(tenant, draft, messageId, pdfText);
 }
 
 async function handleRefreshPreview(tenant: ResolvedTenant) {
@@ -219,7 +243,7 @@ async function handleRefreshPreview(tenant: ResolvedTenant) {
 
   const draft = job.draftJson as OrderDraft;
   const overrides = parseManualOverridesFromMappingJson(job.mappingJson);
-  await sendPreviewForJob(tenant, job.id, draft, overrides);
+  await sendPreviewForJob(tenant, job.id, draft, overrides, job.pdfText);
   await sendWhatsAppText(tenant.phoneE164, "Eşleştirme yenilendi.");
 }
 
@@ -263,7 +287,7 @@ async function handleMappingCommandText(
   }
 
   await sendWhatsAppText(tenant.phoneE164, result.message);
-  await sendPreviewForJob(tenant, job.id, draft, result.overrides);
+  await sendPreviewForJob(tenant, job.id, draft, result.overrides, job.pdfText);
 }
 
 async function handleConfirm(tenant: ResolvedTenant) {
@@ -305,13 +329,16 @@ async function handleConfirm(tenant: ResolvedTenant) {
     { invoiceJobId: job.id },
   );
 
-  const draft = job.draftJson as OrderDraft;
+  const draft = applyPdfRepairsIfAvailable(job.pdfText, job.draftJson as OrderDraft);
   const overrides = parseManualOverridesFromMappingJson(job.mappingJson);
   const resolved = await resolveOrderMappings(tenant, draft, { manualOverrides: overrides });
 
   await prisma.invoiceJob.update({
     where: { id: job.id },
-    data: { mappingJson: toResolvedOrderSnapshot(resolved) as object },
+    data: {
+      draftJson: draft as object,
+      mappingJson: toResolvedOrderSnapshot(resolved) as object,
+    },
   });
 
   if (resolved.blockingErrors.length > 0) {

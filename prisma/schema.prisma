@@ -62,6 +62,7 @@ model InvoiceJob {
   phoneE164      String    @map("phone_e164")
   orderNumber    String?   @map("order_number")
   draftJson      Json      @map("draft_json")
+  pdfText        String?   @map("pdf_text") @db.Text
   mappingJson    Json?     @map("mapping_json")
   draftHash      String    @map("draft_hash")
   status         String    @default("draft")

@@ -5,8 +5,11 @@ import {
   catalogProductToInvoiceMeta,
   searchProductInCatalog,
 } from "./catalog.js";
-import { extractLineCodeCandidates } from "./extract-codes.js";
-import { normalizeCode } from "./score.js";
+import {
+  extractLineCodeCandidates,
+  lineContainsProductCode,
+} from "./extract-codes.js";
+import { getAutoMatchThreshold, normalizeCode, scoreNameMatch } from "./score.js";
 import type { MatchSource } from "./customer.js";
 import type { MatchSuggestion } from "./types.js";
 
@@ -84,6 +87,89 @@ async function learnProductMapping(
   }
 }
 
+/** Stale DB kaydını ele — ürün kodu veya isim benzerliği doğrulanmalı. */
+export async function isDbMappingValidForLine(
+  catalog: CatalogCache,
+  productId: string,
+  line: OrderDraftLine,
+): Promise<boolean> {
+  const product = await catalog.findProductById(productId);
+  if (!product) return false;
+
+  const codes = extractLineCodeCandidates(line);
+  const codeMatch = codes.some((c) =>
+    product.codes.some((pc) => normalizeCode(pc) === normalizeCode(c)),
+  );
+  if (codeMatch) return true;
+  if (lineContainsProductCode(line.name, product.title)) return true;
+
+  return scoreNameMatch(line.name, product.title) >= getAutoMatchThreshold();
+}
+
+async function tryDbMapping(
+  tenantId: string,
+  line: OrderDraftLine,
+  catalog: CatalogCache | undefined,
+  name: string,
+  sku: string | undefined,
+  codeCandidates: string[],
+): Promise<ResolvedProductLine | null> {
+  const attempts: Array<{ productId: string; sku?: string }> = [];
+
+  for (const code of codeCandidates) {
+    const bySku = await prisma.productMapping.findFirst({
+      where: { tenantId, localSku: code },
+    });
+    if (bySku?.bizimhesapProductId) {
+      attempts.push({ productId: bySku.bizimhesapProductId, sku: code });
+    }
+
+    const bySkuName = await prisma.productMapping.findFirst({
+      where: {
+        tenantId,
+        localName: { equals: code, mode: "insensitive" },
+      },
+    });
+    if (bySkuName?.bizimhesapProductId) {
+      attempts.push({ productId: bySkuName.bizimhesapProductId, sku: code });
+    }
+  }
+
+  if (sku) {
+    const bySku = await prisma.productMapping.findFirst({
+      where: { tenantId, localSku: sku },
+    });
+    if (bySku?.bizimhesapProductId) {
+      attempts.push({ productId: bySku.bizimhesapProductId, sku });
+    }
+  }
+
+  const byName = await prisma.productMapping.findFirst({
+    where: {
+      tenantId,
+      localName: { equals: name, mode: "insensitive" },
+    },
+  });
+  if (byName?.bizimhesapProductId) {
+    attempts.push({ productId: byName.bizimhesapProductId, sku });
+  }
+
+  for (const attempt of attempts) {
+    if (catalog) {
+      const valid = await isDbMappingValidForLine(catalog, attempt.productId, line);
+      if (!valid) continue;
+    }
+    return enrichFromCatalog(catalog, attempt.productId, {
+      productId: attempt.productId,
+      name,
+      sku: attempt.sku ?? sku,
+      source: "db",
+    });
+  }
+
+  return null;
+}
+
 export async function resolveProductLine(
   tenantId: string,
   line: OrderDraftLine,
@@ -104,63 +190,7 @@ export async function resolveProductLine(
     });
   }
 
-  for (const code of codeCandidates) {
-    const bySku = await prisma.productMapping.findFirst({
-      where: { tenantId, localSku: code },
-    });
-    if (bySku?.bizimhesapProductId) {
-      return enrichFromCatalog(catalog, bySku.bizimhesapProductId, {
-        productId: bySku.bizimhesapProductId,
-        name,
-        sku: code,
-        source: "db",
-      });
-    }
-
-    const bySkuName = await prisma.productMapping.findFirst({
-      where: {
-        tenantId,
-        localName: { equals: code, mode: "insensitive" },
-      },
-    });
-    if (bySkuName?.bizimhesapProductId) {
-      return enrichFromCatalog(catalog, bySkuName.bizimhesapProductId, {
-        productId: bySkuName.bizimhesapProductId,
-        name,
-        sku: code,
-        source: "db",
-      });
-    }
-  }
-
-  if (sku) {
-    const bySku = await prisma.productMapping.findFirst({
-      where: { tenantId, localSku: sku },
-    });
-    if (bySku?.bizimhesapProductId) {
-      return enrichFromCatalog(catalog, bySku.bizimhesapProductId, {
-        productId: bySku.bizimhesapProductId,
-        name,
-        sku,
-        source: "db",
-      });
-    }
-  }
-
-  const byName = await prisma.productMapping.findFirst({
-    where: {
-      tenantId,
-      localName: { equals: name, mode: "insensitive" },
-    },
-  });
-  if (byName?.bizimhesapProductId) {
-    return enrichFromCatalog(catalog, byName.bizimhesapProductId, {
-      productId: byName.bizimhesapProductId,
-      name,
-      sku,
-      source: "db",
-    });
-  }
+  let catalogSuggestion: MatchSuggestion | undefined;
 
   if (catalog) {
     const result = await searchProductInCatalog(catalog, line, lineIndex);
@@ -177,8 +207,22 @@ export async function resolveProductLine(
       };
     }
     if (result.suggestion) {
-      return { name, sku, source: "none", suggestion: result.suggestion };
+      catalogSuggestion = result.suggestion;
     }
+  }
+
+  const dbResolved = await tryDbMapping(
+    tenantId,
+    line,
+    catalog,
+    name,
+    sku,
+    codeCandidates,
+  );
+  if (dbResolved) return dbResolved;
+
+  if (catalogSuggestion) {
+    return { name, sku, source: "none", suggestion: catalogSuggestion };
   }
 
   return { name, sku, source: "none" };

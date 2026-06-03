@@ -37,8 +37,16 @@ export const ORDER_DRAFT_JSON_SCHEMA = {
         properties: {
           name: { type: "string" },
           sku: { type: ["string", "null"] },
-          qty: { type: "number" },
-          unitPrice: { type: "number" },
+          qty: {
+            type: "number",
+            description:
+              "Fiş satırındaki miktar. 2 adet, x2, 2x, 2.00 gibi açık miktar varsa onu yaz. Miktar net okunmuyorsa veya hiç yoksa 1.",
+          },
+          unitPrice: {
+            type: "number",
+            description:
+              "Birim fiyat (Birim Fiyat sütunu). Satır toplamı veya genel toplam değil.",
+          },
           taxRate: { type: ["number", "null"] },
         },
         required: ["name", "sku", "qty", "unitPrice", "taxRate"],
