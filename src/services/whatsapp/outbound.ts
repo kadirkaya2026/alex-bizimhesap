@@ -1,5 +1,7 @@
 import { getEnv, isWhatsAppConfigured } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
+import type { ResolvedCustomer } from "../matching/customer.js";
+import type { ResolvedLine, StockWarning } from "../matching/resolve-order.js";
 
 export async function sendWhatsAppText(
   toPhoneE164: string,
@@ -44,20 +46,66 @@ export function formatPreviewMessage(params: {
   orderNumber?: string;
   lineCount: number;
   total: string;
+  customer?: ResolvedCustomer;
+  lines?: ResolvedLine[];
+  stockWarnings?: StockWarning[];
+  blockingErrors?: string[];
 }): string {
-  const lines = [
-    "Sipariş özeti",
-    `Cari: ${params.customerName}`,
-  ];
-  if (params.orderNumber) {
-    lines.push(`Sipariş no: ${params.orderNumber}`);
+  const output: string[] = ["Sipariş özeti"];
+
+  if (params.customer?.customerId) {
+    const src = params.customer.source === "db" ? "kayıtlı" : "katalog";
+    output.push(`Cari: ${params.customerName} ✓ (#${params.customer.customerId}, ${src})`);
+  } else {
+    output.push(`Cari: ${params.customerName} ✗ eşleşmedi`);
   }
-  lines.push(
-    `Kalemler: ${params.lineCount} satır`,
-    `Toplam: ${params.total} (KDV dahil)`,
-    "",
-    "ONAYLA yazınca Bizimhesap'a satış faturası açılır.",
-    "İPTAL ile vazgeçebilirsiniz.",
-  );
+
+  if (params.orderNumber) {
+    output.push(`Sipariş no: ${params.orderNumber}`);
+  }
+
+  if (params.lines?.length) {
+    for (const line of params.lines) {
+      const qtyLabel = `x${line.qty}`;
+      if (line.productId) {
+        const stockWarn = params.stockWarnings?.find((w) => w.productId === line.productId);
+        if (stockWarn) {
+          output.push(
+            `• ${line.name} ${qtyLabel} ⚠ stok: ${stockWarn.available} (istenen: ${stockWarn.requested})`,
+          );
+        } else {
+          output.push(`• ${line.name} ${qtyLabel} ✓ (#${line.productId})`);
+        }
+      } else {
+        const skuPart = line.sku ? ` SKU:${line.sku}` : "";
+        output.push(`• ${line.name} ${qtyLabel} ✗ eşleşmedi${skuPart}`);
+      }
+    }
+  } else {
+    output.push(`Kalemler: ${params.lineCount} satır`);
+  }
+
+  output.push(`Toplam: ${params.total} (KDV dahil)`);
+
+  const blocking = params.blockingErrors ?? [];
+  if (blocking.length > 0) {
+    output.push("", "Eşleşmeyen:");
+    for (const err of blocking) {
+      output.push(`• ${err}`);
+    }
+    output.push("", "Eşleşmeyen kalem varken ONAYLA çalışmaz.");
+  }
+
+  if (params.stockWarnings?.length && blocking.length === 0) {
+    output.push("", "Stok uyarısı var; yine de ONAYLA ile devam edebilirsiniz.");
+  }
+
+  output.push("", "ONAYLA yazınca Bizimhesap'a satış faturası açılır.", "İPTAL ile vazgeçebilirsiniz.");
+  return output.join("\n");
+}
+
+export function formatBlockingErrorsMessage(blockingErrors: string[]): string {
+  const lines = ["Fişleme yapılamadı — eşleşmeyen kalemler:", ...blockingErrors.map((e) => `• ${e}`)];
+  lines.push("", "Bizimhesap'ta cari/ürün kaydı oluşturulmadı. Eşleştirmeyi düzeltip tekrar deneyin.");
   return lines.join("\n");
 }

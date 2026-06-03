@@ -32,9 +32,22 @@ export function buildAddInvoicePayload(params: {
   defaultCurrency: string;
   customerId?: string;
   productIdByLine?: (line: OrderDraftLine, index: number) => string | undefined;
+  requireMappedIds?: boolean;
 }): BizimhesapAddInvoicePayload {
   const { draft, firmId, defaultTaxRate, defaultDueDays, defaultCurrency } =
     params;
+
+  if (params.requireMappedIds) {
+    if (!params.customerId) {
+      throw new Error("Cari eşleşmesi zorunlu — customerId eksik");
+    }
+    for (let i = 0; i < draft.lines.length; i++) {
+      const productId = params.productIdByLine?.(draft.lines[i]!, i);
+      if (!productId) {
+        throw new Error(`Ürün eşleşmesi zorunlu — satır ${i + 1}: ${draft.lines[i]!.name}`);
+      }
+    }
+  }
 
   const invoiceDate = draft.orderDate
     ? new Date(draft.orderDate)

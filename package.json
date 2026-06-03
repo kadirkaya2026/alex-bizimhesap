@@ -12,6 +12,8 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx scripts/seed-tenant.ts",
     "test:addinvoice": "tsx scripts/test-addinvoice.ts",
+    "test": "tsx --test src/**/*.test.ts",
+    "sync:catalog-mappings": "tsx scripts/sync-catalog-mappings.ts",
     "railway:setup": "bash scripts/railway-setup.sh",
     "railway:allow-phone": "bash scripts/railway-allow-phone.sh",
     "verify:prod": "bash scripts/verify-production.sh",

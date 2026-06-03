@@ -14,9 +14,10 @@ model Tenant {
   bizimhesapApiKey String   @map("bizimhesap_api_key")
   defaultTaxRate   Decimal  @default(20) @map("default_tax_rate") @db.Decimal(5, 2)
   defaultDueDays   Int      @default(30) @map("default_due_days")
-  defaultCurrency  String   @default("TL") @map("default_currency")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  defaultCurrency      String   @default("TL") @map("default_currency")
+  defaultWarehouseId   String?  @map("default_warehouse_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   phones            AllowedPhone[]
   mappingsCustomer  CustomerMapping[]
@@ -61,6 +62,7 @@ model InvoiceJob {
   phoneE164      String    @map("phone_e164")
   orderNumber    String?   @map("order_number")
   draftJson      Json      @map("draft_json")
+  mappingJson    Json?     @map("mapping_json")
   draftHash      String    @map("draft_hash")
   status         String    @default("draft")
   bizimhesapGuid String?   @map("bizimhesap_guid")

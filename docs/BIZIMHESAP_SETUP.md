@@ -1,8 +1,8 @@
 # Bizimhesap API bağlama (Alex 2)
 
-Kod tarafı hazır: WhatsApp’ta **ONAYLA** → `POST /api/b2b/addinvoice`.
+Kod tarafı hazır: WhatsApp'ta **ONAYLA** → `POST /api/b2b/addinvoice`.
 
-## 1. Bizimhesap’tan alınacaklar
+## 1. Bizimhesap'tan alınacaklar
 
 Pilot firma için Bizimhesap destek / panelden:
 
@@ -10,6 +10,7 @@ Pilot firma için Bizimhesap destek / panelden:
 |----------|----------|
 | `BIZIMHESAP_FIRM_ID` | FirmID (tekil firma kimliği) |
 | `BIZIMHESAP_API_KEY` | B2B API token (Bearer) |
+| `BIZIMHESAP_DEFAULT_WAREHOUSE_ID` | Stok uyarısı için depo ID (opsiyonel) |
 
 Dokümantasyon: https://apidocs.bizimhesap.com/addinvoice
 
@@ -46,6 +47,7 @@ curl https://alex-bizimhesap-production-c144.up.railway.app/health
 ```
 BIZIMHESAP_FIRM_ID=<FirmID>
 BIZIMHESAP_API_KEY=<API token>
+BIZIMHESAP_DEFAULT_WAREHOUSE_ID=<depo-id>
 ```
 
 Kaydet → **Redeploy** (container seed ile tenant kaydına da yazar).
@@ -73,26 +75,47 @@ Başarılı yanıt: `{ "error": "", "guid": "...", "url": "..." }`
 
 ## 4. WhatsApp uçtan uç test
 
-1. eKatalox PDF linki veya PDF → önizleme gelir
+1. eKatalox PDF linki veya PDF → önizleme gelir (cari/ürün eşleşme satırları ile)
 2. **ONAYLA** → Bizimhesap satış faturası (`invoiceType: 3`)
 3. WhatsApp cevabı: `Fişlendi.` + guid + link
 
 Hata varsa mesajda `Bizimhesap hatası: ...` görünür; Railway log: `addinvoice failed`.
 
-## 5. Cari / ürün eşlemesi (opsiyonel)
+## 5. Cari / ürün eşleştirmesi (hibrit)
 
-İlk kurulumda sadece **ünvan** (`customer.title`) ve **ürün adı** gider; Bizimhesap yeni cari/ürün oluşturabilir veya hata dönebilir (firma ayarına bağlı).
+Alex ONAYLA öncesi **hibrit eşleştirme** yapar:
 
-Kalıcı eşleme için PostgreSQL tabloları:
+1. PostgreSQL `customer_mappings` / `product_mappings` tabloları
+2. Bulunamazsa Bizimhesap kataloğu (`GET /customers`, `GET /products`) — vergi no, barkod/SKU, isim
+3. Katalog eşleşmesi tabloya **otomatik kaydedilir** (auto-learn)
+4. Eşleşmeyen cari veya ürün varsa **ONAYLA engellenir** — yeni kayıt oluşturulmaz
+
+Stok uyarısı (engelleme yok):
+
+- Depo: `BIZIMHESAP_DEFAULT_WAREHOUSE_ID` (Railway Variables) veya tenant `default_warehouse_id`
+- Ayar yoksa ilk depo otomatik seçilir (log uyarısı)
+- Yetersiz stok → önizlemede ⚠ gösterilir; ONAYLA ile devam edilebilir
+
+### İlk kurulum — kataloğu tabloya aktar
+
+```bash
+npm run sync:catalog-mappings
+```
+
+Bu komut Bizimhesap'taki tüm cari/ürünleri mapping tablolarına yazar. PDF'deki isimler farklıysa manuel düzeltme gerekebilir.
+
+Tablolar:
 
 - `customer_mappings` — `local_name` → `bizimhesap_customer_id`
 - `product_mappings` — `local_sku` / `local_name` → `bizimhesap_product_id`
 
-Pilot için önce tek test faturası (`test:addinvoice`) ile API’nin açık olduğunu doğrulayın.
+Önizleme mesajında her satır için ✓/✗ ve stok durumu görünür.
 
 ## 6. Kontrol listesi
 
-- [ ] `BIZIMHESAP_FIRM_ID` Railway’de SET
-- [ ] `BIZIMHESAP_API_KEY` Railway’de SET
+- [ ] `BIZIMHESAP_FIRM_ID` Railway'de SET
+- [ ] `BIZIMHESAP_API_KEY` Railway'de SET
+- [ ] `BIZIMHESAP_DEFAULT_WAREHOUSE_ID` (opsiyonel, stok uyarısı için)
+- [ ] `npm run sync:catalog-mappings` (ilk kurulum)
 - [ ] `npm run test:addinvoice` başarılı (yerel)
-- [ ] WhatsApp önizleme → ONAYLA → fişlendi
+- [ ] WhatsApp önizleme → eşleşme satırları görünür → ONAYLA → fişlendi

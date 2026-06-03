@@ -7,8 +7,10 @@ import {
   buildAddInvoicePayload,
   postAddInvoice,
 } from "../bizimhesap/invoice.js";
-import { resolveCustomerMapping } from "../matching/customer.js";
-import { resolveProductId } from "../matching/product.js";
+import {
+  resolveOrderMappings,
+  toResolvedOrderSnapshot,
+} from "../matching/resolve-order.js";
 import { parseOrderDraftFromPdfText } from "../parser/order-draft.js";
 import {
   extractStorefrontPdfUrlFromText,
@@ -20,6 +22,7 @@ import type { ResolvedTenant } from "../tenant/resolve.js";
 import type { InboundMessage } from "../whatsapp/inbound.js";
 import { downloadWhatsAppMedia } from "../whatsapp/media.js";
 import {
+  formatBlockingErrorsMessage,
   formatPreviewMessage,
   sendWhatsAppText,
 } from "../whatsapp/outbound.js";
@@ -116,12 +119,16 @@ async function createPreviewJob(
     return;
   }
 
+  const resolved = await resolveOrderMappings(tenant, draft);
+  const mappingSnapshot = toResolvedOrderSnapshot(resolved);
+
   const job = await prisma.invoiceJob.create({
     data: {
       tenantId: tenant.tenantId,
       phoneE164: tenant.phoneE164,
       orderNumber: draft.orderNumber ?? null,
       draftJson: draft as object,
+      mappingJson: mappingSnapshot as object,
       draftHash,
       status: InvoiceJobStatus.PREVIEW,
       whatsappMsgId,
@@ -141,6 +148,10 @@ async function createPreviewJob(
       orderNumber: draft.orderNumber ?? undefined,
       lineCount: draft.lines.length,
       total: formatDraftTotal(draft),
+      customer: resolved.customer,
+      lines: resolved.lines,
+      stockWarnings: resolved.stockWarnings,
+      blockingErrors: resolved.blockingErrors,
     }),
   );
 }
@@ -200,11 +211,25 @@ async function handleConfirm(tenant: ResolvedTenant) {
   );
 
   const draft = job.draftJson as OrderDraft;
-  const customer = await resolveCustomerMapping(tenant.tenantId, draft);
+  const resolved = await resolveOrderMappings(tenant, draft);
 
-  const productIds: (string | undefined)[] = [];
-  for (let i = 0; i < draft.lines.length; i++) {
-    productIds.push(await resolveProductId(tenant.tenantId, draft.lines[i]!));
+  await prisma.invoiceJob.update({
+    where: { id: job.id },
+    data: { mappingJson: toResolvedOrderSnapshot(resolved) as object },
+  });
+
+  if (resolved.blockingErrors.length > 0) {
+    await setConversationState(
+      tenant.tenantId,
+      tenant.phoneE164,
+      ConversationState.AWAITING_CONFIRM,
+      { invoiceJobId: job.id },
+    );
+    await sendWhatsAppText(
+      tenant.phoneE164,
+      formatBlockingErrorsMessage(resolved.blockingErrors),
+    );
+    return;
   }
 
   const payload = buildAddInvoicePayload({
@@ -213,9 +238,17 @@ async function handleConfirm(tenant: ResolvedTenant) {
     defaultTaxRate: tenant.defaultTaxRate,
     defaultDueDays: tenant.defaultDueDays,
     defaultCurrency: tenant.defaultCurrency,
-    customerId: customer.customerId,
-    productIdByLine: (_line, index) => productIds[index],
+    customerId: resolved.customer.customerId,
+    productIdByLine: (_line, index) => resolved.lines[index]?.productId,
+    requireMappedIds: true,
   });
+
+  if (resolved.stockWarnings.length > 0) {
+    const stockNote = resolved.stockWarnings
+      .map((w) => `${w.productName}: stok ${w.available}, istenen ${w.requested}`)
+      .join("; ");
+    logger.warn({ jobId: job.id, stockNote }, "Stok uyarısı ile ONAYLA devam ediliyor");
+  }
 
   try {
     const result = await postAddInvoice(payload);

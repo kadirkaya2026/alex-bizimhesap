@@ -13,6 +13,7 @@ const envSchema = z.object({
   BIZIMHESAP_FIRM_ID: z.string().optional(),
   BIZIMHESAP_API_KEY: z.string().optional(),
   BIZIMHESAP_BASE_URL: z.string().url().default("https://bizimhesap.com/api/b2b"),
+  BIZIMHESAP_DEFAULT_WAREHOUSE_ID: z.string().optional(),
   TENANT_NAME: z.string().default("Pilot Firma"),
   ALEX_ALLOWED_PHONES: z.string().default(""),
   DEFAULT_TAX_RATE: z.coerce.number().default(20),

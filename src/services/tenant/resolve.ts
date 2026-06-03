@@ -10,6 +10,7 @@ export interface ResolvedTenant {
   defaultTaxRate: number;
   defaultDueDays: number;
   defaultCurrency: string;
+  defaultWarehouseId?: string;
 }
 
 /** Railway env güncel; DB seed eski kalabiliyor — env öncelikli. */
@@ -35,6 +36,13 @@ function resolveBizimhesapCreds(tenant: {
   };
 }
 
+function resolveDefaultWarehouseId(tenant: { defaultWarehouseId: string | null }): string | undefined {
+  const env = getEnv();
+  const envId = env.BIZIMHESAP_DEFAULT_WAREHOUSE_ID?.trim();
+  const tenantId = tenant.defaultWarehouseId?.trim();
+  return tenantId || envId || undefined;
+}
+
 export async function resolveTenantByPhone(
   rawPhone: string,
 ): Promise<ResolvedTenant | null> {
@@ -55,6 +63,7 @@ export async function resolveTenantByPhone(
       defaultTaxRate: Number(t.defaultTaxRate),
       defaultDueDays: t.defaultDueDays,
       defaultCurrency: t.defaultCurrency,
+      defaultWarehouseId: resolveDefaultWarehouseId(t),
     };
   }
 
@@ -75,5 +84,6 @@ export async function resolveTenantByPhone(
     defaultTaxRate: Number(tenant.defaultTaxRate),
     defaultDueDays: tenant.defaultDueDays,
     defaultCurrency: tenant.defaultCurrency,
+    defaultWarehouseId: resolveDefaultWarehouseId(tenant),
   };
 }
