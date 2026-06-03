@@ -19,6 +19,10 @@ import {
   buildMappingWarnings,
   type MappingWarning,
 } from "./smart-mapping.js";
+import {
+  sanitizeCustomerId,
+  sanitizeProductId,
+} from "./validate-catalog-id.js";
 
 export type { MappingWarning } from "./smart-mapping.js";
 
@@ -290,6 +294,13 @@ export async function resolveOrderMappings(
       index: i,
       qty: line.qty,
     });
+  }
+
+  customer = await sanitizeCustomerId(customer, cache);
+
+  for (let i = 0; i < lines.length; i++) {
+    const sanitized = await sanitizeProductId(lines[i]!, cache);
+    lines[i] = { ...sanitized, index: i, qty: lines[i]!.qty };
   }
 
   customer = await applyCustomerFallback(customer, cache);

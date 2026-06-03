@@ -82,12 +82,34 @@ describe("buildAddInvoicePayload", () => {
       defaultDueDays: 30,
       defaultCurrency: "TL",
       customerId: "C1",
-      productIdByLine: () => "P1",
+      productMetaByLine: () => ({
+        productId: "P1",
+        bizimhesapTitle: "LA-031",
+      }),
       requireMappedIds: true,
     });
 
     assert.equal(resolveInvoiceCurrency({ ...baseDraft, currency: "TRY" }, "TL"), "TL");
     assert.equal(payload.amounts.currency, "TL");
+  });
+
+  it("throws when mapped productId has no catalog title", () => {
+    assert.throws(
+      () =>
+        buildAddInvoicePayload({
+          draft: baseDraft,
+          firmId: "FIRM",
+          defaultTaxRate: 20,
+          defaultDueDays: 30,
+          defaultCurrency: "TL",
+          customerId: "C1",
+          productMetaByLine: () => ({
+            productId: "PROD-1",
+          }),
+          requireMappedIds: true,
+        }),
+      /katalog başlığı bulunamadı/,
+    );
   });
 
   it("sets note field for fallback product line", () => {

@@ -75,7 +75,13 @@ export function buildAddInvoicePayload(params: {
     const productId =
       meta?.productId ?? params.productIdByLine?.(line, index);
 
-    const productName = meta?.bizimhesapTitle ?? line.name;
+    const productName = meta?.bizimhesapTitle ?? (productId ? "" : line.name);
+    if (!productName && productId) {
+      throw new Error(
+        `Ürün adı eksik — satır ${index + 1}: katalog başlığı bulunamadı (productId=${productId})`,
+      );
+    }
+
     const barcode =
       productId && meta?.bizimhesapBarcode
         ? meta.bizimhesapBarcode

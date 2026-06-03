@@ -12,6 +12,7 @@ import {
   orderDraftSchema,
   type OrderDraft,
 } from "./order-draft.schema.js";
+import { repairLineQuantitiesFromPdfText } from "./repair-quantities.js";
 
 function parseCompletionContent(raw: string | null | undefined): unknown {
   if (!raw) {
@@ -69,5 +70,5 @@ export async function parseOrderDraftFromPdfText(pdfText: string): Promise<Order
     );
   }
 
-  return normalizeOrderDraft(result.data);
+  return repairLineQuantitiesFromPdfText(pdfText, normalizeOrderDraft(result.data));
 }

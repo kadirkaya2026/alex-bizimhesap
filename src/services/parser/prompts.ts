@@ -9,7 +9,11 @@ Kurallar:
 - Her ürün satırı:
   - name: ürün açıklaması / tam ad (uzun metin burada)
   - sku: yalnızca fişte ayrı barkod/stok kodu sütunu veya net barkod alanı varsa doldur; yoksa null — name içinden tahmin etme, uydurma
-  - qty: "Adet" sütunundaki miktar (tam sayı); satır toplamı ile tutarlı olmalı
+  - qty: KRİTİK — fişteki adet/miktar sütununu oku. "Adet", "Miktar", "Qty" sütunundaki tam sayıyı yaz.
+    * "2 adet", "2 x", "x2", "Miktar: 2", tabloda "… 2  8.95 $  17.90 $" → qty: 2
+    * Satır tutarı ÷ birim fiyat tutarlı olmalı (17.90 / 8.95 = 2 adet)
+    * Fişte adet açıkça görünüyorsa ASLA 1 yazma / varsayılan 1 kullanma
+    * Yalnızca fişte hiç adet bilgisi yoksa qty: 1
   - unitPrice: birim fiyat (fişteki para biriminde)
   - taxRate (yoksa null veya 20)
 - currency: fişteki para birimi — $ veya USD ise "USD", € veya EUR ise "EUR", ₺/TL ise "TRY"
@@ -19,5 +23,17 @@ Kurallar:
 - Emin olmadığın alanları uydurma; null kullan.`;
 
 export function buildOrderDraftUserPrompt(pdfText: string): string {
-  return `Aşağıdaki sipariş fişi metnini parse et:\n\n${pdfText.slice(0, 12000)}`;
+  return `Aşağıdaki sipariş fişi metnini parse et.
+
+ADET (qty) OKUMA — ZORUNLU:
+- Her ürün satırındaki Adet/Miktar sütununu ayrı ayrı oku.
+- Tablo formatında "ürün adı ... ADET ... birim fiyat ... satır tutarı" yapısını takip et.
+- Örnek: "LB-1002 ... 2  8.95 $  17.90 $" → qty: 2 (ASLA 1 yazma).
+- "2 adet", "x2", "2 x", "Miktar: 2" gibi ifadeleri qty alanına yaz.
+- Satır tutarı ÷ birim fiyat = adet ise bu adeti kullan.
+- Fişte adet görünüyorsa varsayılan 1 kullanma.
+
+Fiş metni:
+
+${pdfText.slice(0, 12000)}`;
 }
