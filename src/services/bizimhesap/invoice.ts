@@ -93,7 +93,10 @@ export function buildAddInvoicePayload(params: {
     customer: {
       ...(params.customerId ? { customerId: params.customerId } : {}),
       title: draft.customerName,
-      address: "-",
+      ...(draft.taxOffice ? { taxOffice: draft.taxOffice } : {}),
+      ...(draft.taxNo ? { taxNo: draft.taxNo } : {}),
+      ...(draft.customerPhone ? { phone: draft.customerPhone } : {}),
+      address: draft.customerAddress?.trim() || "-",
     },
     amounts: {
       currency: defaultCurrency,

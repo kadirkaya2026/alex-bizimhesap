@@ -1,5 +1,18 @@
 # Railway deploy runbook
 
+## Hızlı CLI (önerilen)
+
+```bash
+railway login
+cd /Users/kadirkaya/Desktop/alex-bizimhesap
+railway link          # alex-bizimhesap projesini seç
+npm run railway:setup
+```
+
+Detay: [RAILWAY_CLI.md](./RAILWAY_CLI.md)
+
+---
+
 ## 1. Proje oluşturma
 
 1. [railway.app](https://railway.app) → **New Project** (Zyreos Alex projesi değil).

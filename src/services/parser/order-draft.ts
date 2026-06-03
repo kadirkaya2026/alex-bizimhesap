@@ -2,11 +2,28 @@ import OpenAI from "openai";
 import { getEnv, isOpenAiConfigured } from "../../config/env.js";
 import { AppError } from "../../lib/errors.js";
 import { logger } from "../../lib/logger.js";
+import { ORDER_DRAFT_JSON_SCHEMA } from "./order-draft.openai-schema.js";
 import {
   buildOrderDraftUserPrompt,
   ORDER_DRAFT_SYSTEM_PROMPT,
 } from "./prompts.js";
-import { orderDraftSchema, type OrderDraft } from "./order-draft.schema.js";
+import {
+  normalizeOrderDraft,
+  orderDraftSchema,
+  type OrderDraft,
+} from "./order-draft.schema.js";
+
+function parseCompletionContent(raw: string | null | undefined): unknown {
+  if (!raw) {
+    throw new AppError("GPT boş yanıt döndü", "GPT_EMPTY_RESPONSE");
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    logger.error({ raw }, "GPT JSON parse failed");
+    throw new AppError("GPT geçersiz JSON döndü", "GPT_INVALID_JSON");
+  }
+}
 
 export async function parseOrderDraftFromPdfText(pdfText: string): Promise<OrderDraft> {
   if (!isOpenAiConfigured()) {
@@ -23,25 +40,25 @@ export async function parseOrderDraftFromPdfText(pdfText: string): Promise<Order
   const completion = await client.chat.completions.create({
     model: env.OPENAI_MODEL,
     temperature: 0.1,
-    response_format: { type: "json_object" },
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "order_draft",
+        strict: true,
+        schema: ORDER_DRAFT_JSON_SCHEMA,
+      },
+    },
     messages: [
       { role: "system", content: ORDER_DRAFT_SYSTEM_PROMPT },
       { role: "user", content: buildOrderDraftUserPrompt(pdfText) },
     ],
   });
 
-  const raw = completion.choices[0]?.message?.content;
-  if (!raw) {
-    throw new AppError("GPT boş yanıt döndü", "GPT_EMPTY_RESPONSE");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    logger.error({ raw }, "GPT JSON parse failed");
-    throw new AppError("GPT geçersiz JSON döndü", "GPT_INVALID_JSON");
-  }
+  const message = completion.choices[0]?.message;
+  const parsed =
+    message && "parsed" in message && message.parsed != null
+      ? message.parsed
+      : parseCompletionContent(message?.content);
 
   const result = orderDraftSchema.safeParse(parsed);
   if (!result.success) {
@@ -52,5 +69,5 @@ export async function parseOrderDraftFromPdfText(pdfText: string): Promise<Order
     );
   }
 
-  return result.data;
+  return normalizeOrderDraft(result.data);
 }

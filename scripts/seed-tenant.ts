@@ -10,6 +10,8 @@ const firmId = env.BIZIMHESAP_FIRM_ID ?? "REPLACE_FIRM_ID";
 const apiKey = env.BIZIMHESAP_API_KEY ?? "REPLACE_API_KEY";
 const phones = getAllowedPhonesFromEnv();
 
+const existing = await prisma.tenant.findUnique({ where: { id: "seed-pilot" } });
+
 const tenant = await prisma.tenant.upsert({
   where: { id: "seed-pilot" },
   create: {
@@ -23,11 +25,11 @@ const tenant = await prisma.tenant.upsert({
   },
   update: {
     name: env.TENANT_NAME,
-    bizimhesapFirmId: firmId,
-    bizimhesapApiKey: apiKey,
     defaultTaxRate: env.DEFAULT_TAX_RATE,
     defaultDueDays: env.DEFAULT_DUE_DAYS,
     defaultCurrency: env.DEFAULT_CURRENCY,
+    ...(existing && firmId === "REPLACE_FIRM_ID" ? {} : { bizimhesapFirmId: firmId }),
+    ...(existing && apiKey === "REPLACE_API_KEY" ? {} : { bizimhesapApiKey: apiKey }),
   },
 });
 

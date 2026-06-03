@@ -8,11 +8,7 @@ const app = express();
 
 app.use(healthRouter);
 
-app.use(
-  "/webhooks/whatsapp",
-  express.raw({ type: "application/json", limit: "2mb" }),
-  whatsappWebhookRouter,
-);
+app.use("/webhooks/whatsapp", whatsappWebhookRouter);
 
 app.use(express.json({ limit: "1mb" }));
 

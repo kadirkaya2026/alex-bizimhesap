@@ -11,7 +11,7 @@ import { resolveCustomerMapping } from "../matching/customer.js";
 import { resolveProductId } from "../matching/product.js";
 import { parseOrderDraftFromPdfText } from "../parser/order-draft.js";
 import {
-  extractPdfUrlFromText,
+  extractStorefrontPdfUrlFromText,
   getPdfTextFromBuffer,
   getPdfTextFromUrl,
 } from "../parser/pdf.js";
@@ -24,8 +24,12 @@ import {
   sendWhatsAppText,
 } from "../whatsapp/outbound.js";
 import {
+  ensureConversationAwaitingConfirm,
+  findLatestAwaitingConfirmJob,
+} from "./invoice-job.js";
+import { InvoiceJobStatus } from "./invoice-job-status.js";
+import {
   ConversationState,
-  type ConversationContext,
   isCancelCommand,
   isConfirmCommand,
   isHelpCommand,
@@ -43,11 +47,17 @@ async function setConversationState(
   tenantId: string,
   phoneE164: string,
   state: string,
-  context?: ConversationContext,
+  context?: { invoiceJobId?: string; lastDraftHash?: string },
 ) {
-  await prisma.conversation.update({
+  await prisma.conversation.upsert({
     where: { tenantId_phoneE164: { tenantId, phoneE164 } },
-    data: {
+    create: {
+      tenantId,
+      phoneE164,
+      state,
+      contextJson: (context ?? undefined) as Prisma.InputJsonValue | undefined,
+    },
+    update: {
       state,
       contextJson: (context ?? undefined) as Prisma.InputJsonValue | undefined,
     },
@@ -76,7 +86,12 @@ async function checkDuplicateOrder(
   const existing = await prisma.invoiceJob.findUnique({
     where: { tenantId_orderNumber: { tenantId, orderNumber } },
   });
-  if (existing?.status === "posted" && existing.bizimhesapGuid) {
+  if (
+    existing &&
+    (existing.status === InvoiceJobStatus.SUCCESS ||
+      existing.status === "posted") &&
+    existing.bizimhesapGuid
+  ) {
     return existing.bizimhesapGuid;
   }
   return null;
@@ -91,7 +106,7 @@ async function createPreviewJob(
 
   const duplicate = await checkDuplicateOrder(
     tenant.tenantId,
-    draft.orderNumber,
+    draft.orderNumber ?? undefined,
   );
   if (duplicate) {
     await sendWhatsAppText(
@@ -106,25 +121,24 @@ async function createPreviewJob(
       tenantId: tenant.tenantId,
       phoneE164: tenant.phoneE164,
       orderNumber: draft.orderNumber ?? null,
-      draftJson: draft,
+      draftJson: draft as object,
       draftHash,
-      status: "preview",
+      status: InvoiceJobStatus.PREVIEW,
       whatsappMsgId,
     },
   });
 
-  await setConversationState(
+  await ensureConversationAwaitingConfirm(
     tenant.tenantId,
     tenant.phoneE164,
-    ConversationState.AWAITING_CONFIRM,
-    { invoiceJobId: job.id, lastDraftHash: draftHash },
+    job.id,
   );
 
   await sendWhatsAppText(
     tenant.phoneE164,
     formatPreviewMessage({
       customerName: draft.customerName,
-      orderNumber: draft.orderNumber,
+      orderNumber: draft.orderNumber ?? undefined,
       lineCount: draft.lines.length,
       total: formatDraftTotal(draft),
     }),
@@ -147,6 +161,19 @@ async function processPdfText(
 }
 
 async function handleConfirm(tenant: ResolvedTenant) {
+  const job = await findLatestAwaitingConfirmJob(
+    tenant.tenantId,
+    tenant.phoneE164,
+  );
+
+  if (!job) {
+    await sendWhatsAppText(
+      tenant.phoneE164,
+      "Onaylanacak bir fiş özeti yok. Önce PDF veya link gönderin.",
+    );
+    return;
+  }
+
   const conv = await prisma.conversation.findUnique({
     where: {
       tenantId_phoneE164: {
@@ -156,37 +183,20 @@ async function handleConfirm(tenant: ResolvedTenant) {
     },
   });
 
-  if (
-    !conv ||
-    conv.state !== ConversationState.AWAITING_CONFIRM ||
-    !conv.contextJson
-  ) {
-    await sendWhatsAppText(
+  if (conv && conv.state !== ConversationState.AWAITING_CONFIRM) {
+    await setConversationState(
+      tenant.tenantId,
       tenant.phoneE164,
-      "Onaylanacak bir fiş özeti yok. Önce PDF veya link gönderin.",
+      ConversationState.AWAITING_CONFIRM,
+      { invoiceJobId: job.id },
     );
-    return;
-  }
-
-  const ctx = conv.contextJson as ConversationContext;
-  if (!ctx.invoiceJobId) {
-    await sendWhatsAppText(tenant.phoneE164, "Fiş kaydı bulunamadı.");
-    return;
-  }
-
-  const job = await prisma.invoiceJob.findUnique({
-    where: { id: ctx.invoiceJobId },
-  });
-  if (!job || job.status !== "preview") {
-    await sendWhatsAppText(tenant.phoneE164, "Fiş kaydı geçersiz veya süresi dolmuş.");
-    return;
   }
 
   await setConversationState(
     tenant.tenantId,
     tenant.phoneE164,
     ConversationState.POSTING,
-    ctx,
+    { invoiceJobId: job.id },
   );
 
   const draft = job.draftJson as OrderDraft;
@@ -204,7 +214,7 @@ async function handleConfirm(tenant: ResolvedTenant) {
     defaultDueDays: tenant.defaultDueDays,
     defaultCurrency: tenant.defaultCurrency,
     customerId: customer.customerId,
-    productIdByLine: (line, index) => productIds[index],
+    productIdByLine: (_line, index) => productIds[index],
   });
 
   try {
@@ -213,14 +223,11 @@ async function handleConfirm(tenant: ResolvedTenant) {
     if (result.error) {
       await prisma.invoiceJob.update({
         where: { id: job.id },
-        data: { status: "failed", errorMessage: result.error },
+        data: { status: InvoiceJobStatus.FAILED, errorMessage: result.error },
       });
-      await setConversationState(
-        tenant.tenantId,
-        tenant.phoneE164,
-        ConversationState.AWAITING_CONFIRM,
-        ctx,
-      );
+      await setConversationState(tenant.tenantId, tenant.phoneE164, ConversationState.AWAITING_CONFIRM, {
+        invoiceJobId: job.id,
+      });
       await sendWhatsAppText(
         tenant.phoneE164,
         `Bizimhesap hatası: ${result.error}`,
@@ -231,7 +238,7 @@ async function handleConfirm(tenant: ResolvedTenant) {
     await prisma.invoiceJob.update({
       where: { id: job.id },
       data: {
-        status: "posted",
+        status: InvoiceJobStatus.SUCCESS,
         bizimhesapGuid: result.guid,
         bizimhesapUrl: result.url,
         postedAt: new Date(),
@@ -242,32 +249,23 @@ async function handleConfirm(tenant: ResolvedTenant) {
     await setConversationState(
       tenant.tenantId,
       tenant.phoneE164,
-      ConversationState.DONE,
+      ConversationState.IDLE,
     );
 
     await sendWhatsAppText(
       tenant.phoneE164,
       `Fişlendi.\nReferans: ${result.guid}\n${result.url ? `Link: ${result.url}` : ""}`,
     );
-
-    await setConversationState(
-      tenant.tenantId,
-      tenant.phoneE164,
-      ConversationState.IDLE,
-    );
   } catch (error) {
     const msg = getErrorMessage(error);
     logger.error({ error, jobId: job.id }, "addinvoice failed");
     await prisma.invoiceJob.update({
       where: { id: job.id },
-      data: { status: "failed", errorMessage: msg },
+      data: { status: InvoiceJobStatus.FAILED, errorMessage: msg },
     });
-    await setConversationState(
-      tenant.tenantId,
-      tenant.phoneE164,
-      ConversationState.AWAITING_CONFIRM,
-      ctx,
-    );
+    await setConversationState(tenant.tenantId, tenant.phoneE164, ConversationState.AWAITING_CONFIRM, {
+      invoiceJobId: job.id,
+    });
     await sendWhatsAppText(
       tenant.phoneE164,
       `Fişleme başarısız: ${msg}`,
@@ -276,6 +274,18 @@ async function handleConfirm(tenant: ResolvedTenant) {
 }
 
 async function handleCancel(tenant: ResolvedTenant) {
+  const job = await findLatestAwaitingConfirmJob(
+    tenant.tenantId,
+    tenant.phoneE164,
+  );
+
+  if (job) {
+    await prisma.invoiceJob.update({
+      where: { id: job.id },
+      data: { status: InvoiceJobStatus.CANCELLED },
+    });
+  }
+
   await setConversationState(
     tenant.tenantId,
     tenant.phoneE164,
@@ -311,7 +321,7 @@ export async function handleInboundMessage(
       return;
     }
 
-    const pdfUrl = extractPdfUrlFromText(message.text);
+    const pdfUrl = extractStorefrontPdfUrlFromText(message.text);
     if (pdfUrl) {
       try {
         const text = await getPdfTextFromUrl(pdfUrl);
