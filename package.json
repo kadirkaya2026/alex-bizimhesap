@@ -13,7 +13,8 @@
     "db:seed": "tsx scripts/seed-tenant.ts",
     "test:addinvoice": "tsx scripts/test-addinvoice.ts",
     "railway:setup": "bash scripts/railway-setup.sh",
-    "railway:allow-phone": "bash scripts/railway-allow-phone.sh"
+    "railway:allow-phone": "bash scripts/railway-allow-phone.sh",
+    "verify:prod": "bash scripts/verify-production.sh"
   },
   "engines": {
     "node": ">=20"
