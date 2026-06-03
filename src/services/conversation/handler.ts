@@ -221,6 +221,15 @@ async function handleConfirm(tenant: ResolvedTenant) {
     const result = await postAddInvoice(payload, tenant.bizimhesapApiKey);
 
     if (result.error) {
+      logger.warn(
+        {
+          jobId: job.id,
+          error: result.error,
+          firmIdPrefix: payload.firmId.slice(0, 4),
+          firmIdLength: payload.firmId.length,
+        },
+        "addinvoice rejected by Bizimhesap",
+      );
       await prisma.invoiceJob.update({
         where: { id: job.id },
         data: { status: InvoiceJobStatus.FAILED, errorMessage: result.error },

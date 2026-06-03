@@ -26,8 +26,6 @@ const phones = (process.env.ALEX_ALLOWED_PHONES ?? "")
   .map((p) => p.trim())
   .filter(Boolean);
 
-const existing = await prisma.tenant.findUnique({ where: { id: "seed-pilot" } });
-
 const tenant = await prisma.tenant.upsert({
   where: { id: "seed-pilot" },
   create: {
@@ -39,23 +37,14 @@ const tenant = await prisma.tenant.upsert({
     defaultDueDays: dueDays,
     defaultCurrency: currency,
   },
-  update: existing
-    ? {
-        name: tenantName,
-        defaultTaxRate: taxRate,
-        defaultDueDays: dueDays,
-        defaultCurrency: currency,
-        ...(firmId !== "REPLACE_FIRM_ID" ? { bizimhesapFirmId: firmId } : {}),
-        ...(apiKey !== "REPLACE_API_KEY" ? { bizimhesapApiKey: apiKey } : {}),
-      }
-    : {
-        name: tenantName,
-        bizimhesapFirmId: firmId,
-        bizimhesapApiKey: apiKey,
-        defaultTaxRate: taxRate,
-        defaultDueDays: dueDays,
-        defaultCurrency: currency,
-      },
+  update: {
+    name: tenantName,
+    bizimhesapFirmId: firmId,
+    bizimhesapApiKey: apiKey,
+    defaultTaxRate: taxRate,
+    defaultDueDays: dueDays,
+    defaultCurrency: currency,
+  },
 });
 
 for (const raw of phones) {

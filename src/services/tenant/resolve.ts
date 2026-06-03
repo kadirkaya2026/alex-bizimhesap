@@ -1,4 +1,4 @@
-import { getAllowedPhonesFromEnv } from "../../config/env.js";
+import { getAllowedPhonesFromEnv, getEnv } from "../../config/env.js";
 import { prisma } from "../../db/client.js";
 import { normalizePhoneE164 } from "../../lib/phone.js";
 
@@ -10,6 +10,20 @@ export interface ResolvedTenant {
   defaultTaxRate: number;
   defaultDueDays: number;
   defaultCurrency: string;
+}
+
+/** Railway env güncel; DB seed eski kalabiliyor — env öncelikli. */
+function resolveBizimhesapCreds(tenant: {
+  bizimhesapFirmId: string;
+  bizimhesapApiKey: string;
+}) {
+  const env = getEnv();
+  return {
+    bizimhesapFirmId:
+      env.BIZIMHESAP_FIRM_ID?.trim() || tenant.bizimhesapFirmId.trim(),
+    bizimhesapApiKey:
+      env.BIZIMHESAP_API_KEY?.trim() || tenant.bizimhesapApiKey.trim(),
+  };
 }
 
 export async function resolveTenantByPhone(
@@ -24,11 +38,11 @@ export async function resolveTenantByPhone(
 
   if (allowed) {
     const t = allowed.tenant;
+    const bh = resolveBizimhesapCreds(t);
     return {
       tenantId: t.id,
       phoneE164,
-      bizimhesapFirmId: t.bizimhesapFirmId,
-      bizimhesapApiKey: t.bizimhesapApiKey,
+      ...bh,
       defaultTaxRate: Number(t.defaultTaxRate),
       defaultDueDays: t.defaultDueDays,
       defaultCurrency: t.defaultCurrency,
@@ -44,11 +58,11 @@ export async function resolveTenantByPhone(
   const tenant = await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
   if (!tenant) return null;
 
+  const bh = resolveBizimhesapCreds(tenant);
   return {
     tenantId: tenant.id,
     phoneE164,
-    bizimhesapFirmId: tenant.bizimhesapFirmId,
-    bizimhesapApiKey: tenant.bizimhesapApiKey,
+    ...bh,
     defaultTaxRate: Number(tenant.defaultTaxRate),
     defaultDueDays: tenant.defaultDueDays,
     defaultCurrency: tenant.defaultCurrency,

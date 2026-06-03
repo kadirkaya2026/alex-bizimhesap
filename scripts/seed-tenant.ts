@@ -25,11 +25,11 @@ const tenant = await prisma.tenant.upsert({
   },
   update: {
     name: env.TENANT_NAME,
+    bizimhesapFirmId: firmId,
+    bizimhesapApiKey: apiKey,
     defaultTaxRate: env.DEFAULT_TAX_RATE,
     defaultDueDays: env.DEFAULT_DUE_DAYS,
     defaultCurrency: env.DEFAULT_CURRENCY,
-    ...(existing && firmId === "REPLACE_FIRM_ID" ? {} : { bizimhesapFirmId: firmId }),
-    ...(existing && apiKey === "REPLACE_API_KEY" ? {} : { bizimhesapApiKey: apiKey }),
   },
 });
 
