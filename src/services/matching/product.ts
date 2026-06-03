@@ -1,7 +1,10 @@
 import { prisma } from "../../db/client.js";
 import type { OrderDraftLine } from "../parser/order-draft.schema.js";
-import type { CatalogCache } from "./catalog.js";
-import { searchProductInCatalog } from "./catalog.js";
+import type { CatalogCache, CatalogProduct } from "./catalog.js";
+import {
+  catalogProductToInvoiceMeta,
+  searchProductInCatalog,
+} from "./catalog.js";
 import { extractLineCodeCandidates } from "./extract-codes.js";
 import { normalizeCode } from "./score.js";
 import type { MatchSource } from "./customer.js";
@@ -11,17 +14,36 @@ export interface ResolvedProductLine {
   productId?: string;
   name: string;
   sku?: string;
+  bizimhesapTitle?: string;
+  bizimhesapBarcode?: string;
   source: MatchSource;
   suggestion?: MatchSuggestion;
+}
+
+async function enrichFromCatalog(
+  catalog: CatalogCache | undefined,
+  productId: string,
+  partial: ResolvedProductLine,
+): Promise<ResolvedProductLine> {
+  if (!catalog) return partial;
+  const product = await catalog.findProductById(productId);
+  if (!product) return partial;
+  const meta = catalogProductToInvoiceMeta(product);
+  return { ...partial, ...meta };
 }
 
 async function learnProductMapping(
   tenantId: string,
   line: OrderDraftLine,
-  bizimhesapProductId: string,
+  product: CatalogProduct,
 ): Promise<void> {
   const localName = line.name.trim();
-  const localSku = line.sku?.trim() || extractLineCodeCandidates(line)[0] || null;
+  const localSku =
+    product.codes.find(
+      (c) =>
+        c !== product.id &&
+        normalizeCode(c) !== normalizeCode(product.title),
+    ) ?? null;
 
   await prisma.productMapping.upsert({
     where: {
@@ -31,10 +53,10 @@ async function learnProductMapping(
       tenantId,
       localName,
       localSku,
-      bizimhesapProductId,
+      bizimhesapProductId: product.id,
     },
     update: {
-      bizimhesapProductId,
+      bizimhesapProductId: product.id,
       ...(localSku ? { localSku } : {}),
     },
   });
@@ -50,7 +72,7 @@ async function learnProductMapping(
             tenantId,
             localName: `${localName} [${localSku}]`,
             localSku,
-            bizimhesapProductId,
+            bizimhesapProductId: product.id,
           },
         });
       } catch {
@@ -72,12 +94,12 @@ export async function resolveProductLine(
   const codeCandidates = extractLineCodeCandidates(line);
 
   if (manualProductId) {
-    return {
+    return enrichFromCatalog(catalog, manualProductId, {
       productId: manualProductId,
       name,
       sku,
       source: "manual",
-    };
+    });
   }
 
   for (const code of codeCandidates) {
@@ -85,12 +107,13 @@ export async function resolveProductLine(
       where: { tenantId, localSku: code },
     });
     if (bySku?.bizimhesapProductId) {
-      return {
+      return enrichFromCatalog(catalog, bySku.bizimhesapProductId, {
         productId: bySku.bizimhesapProductId,
         name,
         sku: code,
+        bizimhesapTitle: code,
         source: "db",
-      };
+      });
     }
 
     const bySkuName = await prisma.productMapping.findFirst({
@@ -100,12 +123,13 @@ export async function resolveProductLine(
       },
     });
     if (bySkuName?.bizimhesapProductId) {
-      return {
+      return enrichFromCatalog(catalog, bySkuName.bizimhesapProductId, {
         productId: bySkuName.bizimhesapProductId,
         name,
         sku: code,
+        bizimhesapTitle: code,
         source: "db",
-      };
+      });
     }
   }
 
@@ -114,12 +138,12 @@ export async function resolveProductLine(
       where: { tenantId, localSku: sku },
     });
     if (bySku?.bizimhesapProductId) {
-      return {
+      return enrichFromCatalog(catalog, bySku.bizimhesapProductId, {
         productId: bySku.bizimhesapProductId,
         name,
         sku,
         source: "db",
-      };
+      });
     }
   }
 
@@ -130,24 +154,24 @@ export async function resolveProductLine(
     },
   });
   if (byName?.bizimhesapProductId) {
-    return {
+    return enrichFromCatalog(catalog, byName.bizimhesapProductId, {
       productId: byName.bizimhesapProductId,
       name,
       sku,
       source: "db",
-    };
+    });
   }
 
   if (catalog) {
     const result = await searchProductInCatalog(catalog, line, lineIndex);
     if (result.matched) {
-      await learnProductMapping(tenantId, line, result.matched.id);
+      await learnProductMapping(tenantId, line, result.matched);
+      const meta = catalogProductToInvoiceMeta(result.matched);
       return {
         productId: result.matched.id,
         name,
-        sku: sku ?? codeCandidates.find((c) =>
-          result.matched!.codes.some((pc) => normalizeCode(pc) === normalizeCode(c)),
-        ),
+        sku,
+        ...meta,
         source: "catalog",
       };
     }

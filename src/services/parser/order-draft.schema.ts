@@ -18,7 +18,7 @@ export const orderDraftSchema = z.object({
   orderDate: z.string().nullable().optional(),
   paymentNote: z.string().nullable().optional(),
   lines: z.array(orderDraftLineSchema).min(1),
-  currency: z.literal("TRY").default("TRY"),
+  currency: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   subtotal: z.number().nullable().optional(),
   taxTotal: z.number().nullable().optional(),
   total: z.number().nullable().optional(),

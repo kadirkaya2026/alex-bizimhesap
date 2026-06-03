@@ -81,17 +81,18 @@ async function setConversationState(
 }
 
 function formatDraftTotal(draft: OrderDraft): string {
-  if (draft.total != null) {
-    return new Intl.NumberFormat("tr-TR", {
+  const currency = draft.currency ?? "TRY";
+  const format = (amount: number) =>
+    new Intl.NumberFormat("tr-TR", {
       style: "currency",
-      currency: "TRY",
-    }).format(draft.total);
+      currency,
+    }).format(amount);
+
+  if (draft.total != null) {
+    return format(draft.total);
   }
   const sum = draft.lines.reduce((s, l) => s + l.qty * l.unitPrice * 1.2, 0);
-  return new Intl.NumberFormat("tr-TR", {
-    style: "currency",
-    currency: "TRY",
-  }).format(sum);
+  return format(sum);
 }
 
 async function checkDuplicateOrder(
@@ -339,6 +340,15 @@ async function handleConfirm(tenant: ResolvedTenant) {
     defaultCurrency: tenant.defaultCurrency,
     customerId: resolved.customer.customerId,
     productIdByLine: (_line, index) => resolved.lines[index]?.productId,
+    productMetaByLine: (index) => {
+      const line = resolved.lines[index];
+      if (!line) return undefined;
+      return {
+        productId: line.productId,
+        bizimhesapTitle: line.bizimhesapTitle,
+        bizimhesapBarcode: line.bizimhesapBarcode,
+      };
+    },
     requireMappedIds: true,
   });
 

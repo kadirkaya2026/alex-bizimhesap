@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  catalogProductToInvoiceMeta,
   normalizeCustomerRecord,
   normalizeProductRecord,
 } from "./catalog.js";
@@ -92,6 +93,27 @@ describe("parseMappingCommand", () => {
 
   it("parses YENIDEN", () => {
     assert.deepEqual(parseMappingCommand("YENIDEN"), { type: "yeniden" });
+  });
+});
+
+describe("catalogProductToInvoiceMeta", () => {
+  it("uses catalog title and real barcode only", () => {
+    const meta = catalogProductToInvoiceMeta({
+      id: "ID1",
+      title: "LA-031",
+      codes: ["LA-031", "ID1"],
+    });
+    assert.equal(meta.bizimhesapTitle, "LA-031");
+    assert.equal(meta.bizimhesapBarcode, undefined);
+  });
+
+  it("includes barcode when distinct from title", () => {
+    const meta = catalogProductToInvoiceMeta({
+      id: "ID1",
+      title: "Test Ürün",
+      codes: ["TEST-001", "ID1"],
+    });
+    assert.equal(meta.bizimhesapBarcode, "TEST-001");
   });
 });
 

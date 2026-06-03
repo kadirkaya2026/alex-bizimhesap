@@ -213,6 +213,11 @@ export class CatalogCache {
     const customers = await this.getCustomers();
     return customers.find((c) => c.id === id) ?? null;
   }
+
+  async findProductById(id: string): Promise<CatalogProduct | null> {
+    const products = await this.getProducts();
+    return products.find((p) => p.id === id) ?? null;
+  }
 }
 
 export function normalizeCustomerRecord(
@@ -454,4 +459,20 @@ export function extractInventoryStock(
 
 export function getAllProductCodes(product: CatalogProduct): string[] {
   return product.codes;
+}
+
+/** addinvoice satırı için Bizimhesap ürün adı ve (varsa) gerçek barkod. */
+export function catalogProductToInvoiceMeta(product: CatalogProduct): {
+  bizimhesapTitle: string;
+  bizimhesapBarcode?: string;
+} {
+  const barcode = product.codes.find(
+    (c) =>
+      c !== product.id &&
+      normalizeCode(c) !== normalizeCode(product.title),
+  );
+  return {
+    bizimhesapTitle: product.title,
+    ...(barcode ? { bizimhesapBarcode: barcode } : {}),
+  };
 }

@@ -1,4 +1,5 @@
 import type { OrderDraft, OrderDraftLine } from "../parser/order-draft.schema.js";
+import { resolveInvoiceCurrency } from "./currency.js";
 import { postAddInvoiceRaw } from "./client.js";
 import type { BizimhesapAddInvoicePayload } from "./types.js";
 
@@ -24,6 +25,12 @@ function computeLine(line: OrderDraftLine, defaultTaxRate: number) {
   };
 }
 
+export interface InvoiceProductLineMeta {
+  productId?: string;
+  bizimhesapTitle?: string;
+  bizimhesapBarcode?: string;
+}
+
 export function buildAddInvoicePayload(params: {
   draft: OrderDraft;
   firmId: string;
@@ -32,6 +39,7 @@ export function buildAddInvoicePayload(params: {
   defaultCurrency: string;
   customerId?: string;
   productIdByLine?: (line: OrderDraftLine, index: number) => string | undefined;
+  productMetaByLine?: (index: number) => InvoiceProductLineMeta | undefined;
   requireMappedIds?: boolean;
 }): BizimhesapAddInvoicePayload {
   const { draft, firmId, defaultTaxRate, defaultDueDays, defaultCurrency } =
@@ -42,7 +50,9 @@ export function buildAddInvoicePayload(params: {
       throw new Error("Cari eşleşmesi zorunlu — customerId eksik");
     }
     for (let i = 0; i < draft.lines.length; i++) {
-      const productId = params.productIdByLine?.(draft.lines[i]!, i);
+      const meta = params.productMetaByLine?.(i);
+      const productId =
+        meta?.productId ?? params.productIdByLine?.(draft.lines[i]!, i);
       if (!productId) {
         throw new Error(`Ürün eşleşmesi zorunlu — satır ${i + 1}: ${draft.lines[i]!.name}`);
       }
@@ -56,15 +66,26 @@ export function buildAddInvoicePayload(params: {
   dueDate.setDate(dueDate.getDate() + defaultDueDays);
 
   const toIso = (d: Date) => d.toISOString();
+  const invoiceCurrency = resolveInvoiceCurrency(draft, defaultCurrency);
 
   const details = draft.lines.map((line, index) => {
     const calc = computeLine(line, defaultTaxRate);
-    const productId = params.productIdByLine?.(line, index);
+    const meta = params.productMetaByLine?.(index);
+    const productId =
+      meta?.productId ?? params.productIdByLine?.(line, index);
+
+    const productName = meta?.bizimhesapTitle ?? line.name;
+    const barcode =
+      productId && meta?.bizimhesapBarcode
+        ? meta.bizimhesapBarcode
+        : productId
+          ? undefined
+          : line.sku ?? undefined;
 
     return {
       ...(productId ? { productId } : {}),
-      productName: line.name,
-      ...(line.sku ? { barcode: line.sku } : {}),
+      productName,
+      ...(barcode ? { barcode } : {}),
       taxRate: formatMoney(calc.taxRate),
       quantity: line.qty,
       unitPrice: formatMoney(line.unitPrice),
@@ -112,7 +133,7 @@ export function buildAddInvoicePayload(params: {
       address: draft.customerAddress?.trim() || "-",
     },
     amounts: {
-      currency: defaultCurrency,
+      currency: invoiceCurrency,
       gross: formatMoney(grossTotal),
       discount: formatMoney(0),
       net: formatMoney(netTotal),
@@ -126,3 +147,5 @@ export function buildAddInvoicePayload(params: {
 export async function postAddInvoice(payload: BizimhesapAddInvoicePayload) {
   return postAddInvoiceRaw(payload);
 }
+
+export { mapDraftCurrencyToBizimhesap, resolveInvoiceCurrency } from "./currency.js";

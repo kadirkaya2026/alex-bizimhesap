@@ -23,7 +23,7 @@ export const ORDER_DRAFT_JSON_SCHEMA = {
       description: "YYYY-MM-DD",
     },
     paymentNote: { type: ["string", "null"] },
-    currency: { type: "string", enum: ["TRY"] },
+    currency: { type: "string", enum: ["TRY", "USD", "EUR"] },
     subtotal: { type: ["number", "null"] },
     taxTotal: { type: ["number", "null"] },
     total: { type: ["number", "null"] },
