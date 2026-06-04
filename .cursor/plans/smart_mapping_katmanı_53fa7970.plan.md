@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: tests-docs-deploy
     content: Testler + BIZIMHESAP_SETUP.md fallback kurulum, deploy
-    status: in_progress
+    status: completed
 isProject: false
 ---
 

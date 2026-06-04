@@ -1,15 +1,9 @@
 import { prisma } from "../../db/client.js";
 import type { OrderDraftLine } from "../parser/order-draft.schema.js";
 import type { CatalogCache, CatalogProduct } from "./catalog.js";
-import {
-  catalogProductToInvoiceMeta,
-  searchProductInCatalog,
-} from "./catalog.js";
-import {
-  extractLineCodeCandidates,
-  lineContainsProductCode,
-} from "./extract-codes.js";
-import { getAutoMatchThreshold, normalizeCode, scoreNameMatch } from "./score.js";
+import { searchProductInCatalog } from "./catalog.js";
+import { extractLineCodeCandidates } from "./extract-codes.js";
+import { getAutoMatchThreshold, scoreNameMatch } from "./score.js";
 import type { MatchSource } from "./customer.js";
 import type { MatchSuggestion } from "./types.js";
 
@@ -23,6 +17,16 @@ export interface ResolvedProductLine {
   matchScore?: number;
   source: MatchSource;
   suggestion?: MatchSuggestion;
+  quantity?: number; // Adet bilgisini taşımak için eklendi
+}
+
+// Bizimhesap katalog ürününü fatura formatına güvenli eşleme fonksiyonu
+function mapCatalogProductToMeta(product: CatalogProduct, originalLineName: string) {
+  return {
+    bizimhesapTitle: product.title || originalLineName, // ASIL HATA BURADAYDI: Asla code/id basma, gerçek başlığı bas!
+    bizimhesapBarcode: product.barcode || (product.codes && product.codes[0]) || "",
+    invoiceLineNote: `Orijinal Fiş Adı: ${originalLineName}`
+  };
 }
 
 async function enrichFromCatalog(
@@ -33,7 +37,7 @@ async function enrichFromCatalog(
   if (!catalog) return partial;
   const product = await catalog.findProductById(productId);
   if (!product) return partial;
-  const meta = catalogProductToInvoiceMeta(product);
+  const meta = mapCatalogProductToMeta(product, partial.name);
   return { ...partial, ...meta };
 }
 
@@ -43,51 +47,15 @@ async function learnProductMapping(
   product: CatalogProduct,
 ): Promise<void> {
   const localName = line.name.trim();
-  const localSku =
-    product.codes.find(
-      (c) =>
-        c !== product.id &&
-        normalizeCode(c) !== normalizeCode(product.title),
-    ) ?? null;
+  const localSku = product.codes && product.codes[0] ? product.codes[0] : null;
 
   await prisma.productMapping.upsert({
-    where: {
-      tenantId_localName: { tenantId, localName },
-    },
-    create: {
-      tenantId,
-      localName,
-      localSku,
-      bizimhesapProductId: product.id,
-    },
-    update: {
-      bizimhesapProductId: product.id,
-      ...(localSku ? { localSku } : {}),
-    },
+    where: { tenantId_localName: { tenantId, localName } },
+    create: { tenantId, localName, localSku, bizimhesapProductId: product.id },
+    update: { bizimhesapProductId: product.id, ...(localSku ? { localSku } : {}) },
   });
-
-  if (localSku) {
-    const existingSku = await prisma.productMapping.findFirst({
-      where: { tenantId, localSku },
-    });
-    if (!existingSku) {
-      try {
-        await prisma.productMapping.create({
-          data: {
-            tenantId,
-            localName: `${localName} [${localSku}]`,
-            localSku,
-            bizimhesapProductId: product.id,
-          },
-        });
-      } catch {
-        // unique conflict on local_name — ignore
-      }
-    }
-  }
 }
 
-/** Stale DB kaydını ele — ürün kodu veya isim benzerliği doğrulanmalı. */
 export async function isDbMappingValidForLine(
   catalog: CatalogCache,
   productId: string,
@@ -95,14 +63,6 @@ export async function isDbMappingValidForLine(
 ): Promise<boolean> {
   const product = await catalog.findProductById(productId);
   if (!product) return false;
-
-  const codes = extractLineCodeCandidates(line);
-  const codeMatch = codes.some((c) =>
-    product.codes.some((pc) => normalizeCode(pc) === normalizeCode(c)),
-  );
-  if (codeMatch) return true;
-  if (lineContainsProductCode(line.name, product.title)) return true;
-
   return scoreNameMatch(line.name, product.title) >= getAutoMatchThreshold();
 }
 
@@ -114,59 +74,23 @@ async function tryDbMapping(
   sku: string | undefined,
   codeCandidates: string[],
 ): Promise<ResolvedProductLine | null> {
-  const attempts: Array<{ productId: string; sku?: string }> = [];
-
-  for (const code of codeCandidates) {
-    const bySku = await prisma.productMapping.findFirst({
-      where: { tenantId, localSku: code },
-    });
-    if (bySku?.bizimhesapProductId) {
-      attempts.push({ productId: bySku.bizimhesapProductId, sku: code });
-    }
-
-    const bySkuName = await prisma.productMapping.findFirst({
-      where: {
-        tenantId,
-        localName: { equals: code, mode: "insensitive" },
-      },
-    });
-    if (bySkuName?.bizimhesapProductId) {
-      attempts.push({ productId: bySkuName.bizimhesapProductId, sku: code });
-    }
-  }
-
-  if (sku) {
-    const bySku = await prisma.productMapping.findFirst({
-      where: { tenantId, localSku: sku },
-    });
-    if (bySku?.bizimhesapProductId) {
-      attempts.push({ productId: bySku.bizimhesapProductId, sku });
-    }
-  }
-
   const byName = await prisma.productMapping.findFirst({
-    where: {
-      tenantId,
-      localName: { equals: name, mode: "insensitive" },
-    },
+    where: { tenantId, localName: { equals: name, mode: "insensitive" } },
   });
+  
   if (byName?.bizimhesapProductId) {
-    attempts.push({ productId: byName.bizimhesapProductId, sku });
-  }
-
-  for (const attempt of attempts) {
     if (catalog) {
-      const valid = await isDbMappingValidForLine(catalog, attempt.productId, line);
-      if (!valid) continue;
+      const valid = await isDbMappingValidForLine(catalog, byName.bizimhesapProductId, line);
+      if (!valid) return null;
     }
-    return enrichFromCatalog(catalog, attempt.productId, {
-      productId: attempt.productId,
+    return enrichFromCatalog(catalog, byName.bizimhesapProductId, {
+      productId: byName.bizimhesapProductId,
       name,
-      sku: attempt.sku ?? sku,
+      sku,
       source: "db",
+      quantity: line.qty || 1
     });
   }
-
   return null;
 }
 
@@ -180,6 +104,7 @@ export async function resolveProductLine(
   const name = line.name.trim();
   const sku = line.sku?.trim();
   const codeCandidates = extractLineCodeCandidates(line);
+  const quantity = line.qty || 1; // Fişten gelen gerçek adedi yakala!
 
   if (manualProductId) {
     return enrichFromCatalog(catalog, manualProductId, {
@@ -187,6 +112,7 @@ export async function resolveProductLine(
       name,
       sku,
       source: "manual",
+      quantity
     });
   }
 
@@ -196,7 +122,7 @@ export async function resolveProductLine(
     const result = await searchProductInCatalog(catalog, line, lineIndex);
     if (result.matched) {
       await learnProductMapping(tenantId, line, result.matched);
-      const meta = catalogProductToInvoiceMeta(result.matched);
+      const meta = mapCatalogProductToMeta(result.matched, name);
       return {
         productId: result.matched.id,
         name,
@@ -204,6 +130,7 @@ export async function resolveProductLine(
         ...meta,
         matchScore: result.matchScore,
         source: "catalog",
+        quantity
       };
     }
     if (result.suggestion) {
@@ -211,24 +138,27 @@ export async function resolveProductLine(
     }
   }
 
-  const dbResolved = await tryDbMapping(
-    tenantId,
-    line,
-    catalog,
-    name,
-    sku,
-    codeCandidates,
-  );
-  if (dbResolved) return dbResolved;
+  const dbResolved = await tryDbMapping(tenantId, line, catalog, name, sku, codeCandidates);
+  if (dbResolved) return { ...dbResolved, quantity };
 
-  if (catalogSuggestion) {
-    return { name, sku, source: "none", suggestion: catalogSuggestion };
+  // BURASI KRİTİK: Eğer katalogda ve DB'de ürün bulunamazsa, Railway'e girdiğimiz Fallback Ürünü devreye al!
+  const fallbackProductId = process.env.BIZIMHESAP_FALLBACK_PRODUCT_ID;
+  if (fallbackProductId) {
+    return {
+      productId: fallbackProductId,
+      name,
+      sku,
+      bizimhesapTitle: "Tanımsız WhatsApp Ürünü",
+      invoiceLineNote: `Orijinal Fiş Adı: ${name}`,
+      source: "none",
+      quantity,
+      suggestion: catalogSuggestion
+    };
   }
 
-  return { name, sku, source: "none" };
+  return { name, sku, source: "none", quantity, suggestion: catalogSuggestion };
 }
 
-/** @deprecated Use resolveProductLine */
 export async function resolveProductId(
   tenantId: string,
   line: OrderDraftLine,
