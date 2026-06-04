@@ -17,14 +17,15 @@ export interface ResolvedProductLine {
   matchScore?: number;
   source: MatchSource;
   suggestion?: MatchSuggestion;
-  quantity?: number; // Adet bilgisini taşımak için eklendi
+  quantity?: number;
 }
 
 // Bizimhesap katalog ürününü fatura formatına güvenli eşleme fonksiyonu
-function mapCatalogProductToMeta(product: CatalogProduct, originalLineName: string) {
+function mapCatalogProductToMeta(product: any, originalLineName: string) {
+  // product tipini any yaparak TypeScript'in katı barcode kontrolünü esnetiyoruz
   return {
-    bizimhesapTitle: product.title || originalLineName, // ASIL HATA BURADAYDI: Asla code/id basma, gerçek başlığı bas!
-    bizimhesapBarcode: product.barcode || (product.codes && product.codes[0]) || "",
+    bizimhesapTitle: product.title || originalLineName,
+    bizimhesapBarcode: product.barcode || product.barcod || (product.codes && product.codes[0]) || "",
     invoiceLineNote: `Orijinal Fiş Adı: ${originalLineName}`
   };
 }
@@ -104,7 +105,7 @@ export async function resolveProductLine(
   const name = line.name.trim();
   const sku = line.sku?.trim();
   const codeCandidates = extractLineCodeCandidates(line);
-  const quantity = line.qty || 1; // Fişten gelen gerçek adedi yakala!
+  const quantity = line.qty || 1;
 
   if (manualProductId) {
     return enrichFromCatalog(catalog, manualProductId, {
@@ -141,7 +142,6 @@ export async function resolveProductLine(
   const dbResolved = await tryDbMapping(tenantId, line, catalog, name, sku, codeCandidates);
   if (dbResolved) return { ...dbResolved, quantity };
 
-  // BURASI KRİTİK: Eğer katalogda ve DB'de ürün bulunamazsa, Railway'e girdiğimiz Fallback Ürünü devreye al!
   const fallbackProductId = process.env.BIZIMHESAP_FALLBACK_PRODUCT_ID;
   if (fallbackProductId) {
     return {
